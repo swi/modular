@@ -15,7 +15,13 @@
 from typing import List, Optional, Union, cast
 
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import Weights
 from max.pipelines import PipelineConfig, RopeType, WeightsFormat

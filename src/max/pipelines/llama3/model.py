@@ -21,7 +21,7 @@ import numpy as np
 from max.driver import CPU, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.weights import GGUFWeights
 from max.pipelines import (
     LogProbabilities,
@@ -50,22 +50,37 @@ logger = logging.getLogger("max.pipelines")
 class Llama3Inputs(ModelInputs):
     """A class representing inputs for the Llama3 model.
 
-    This class encapsulates the input tensors required for the Llama3 model execution:
-    - tokens: A tensor containing the input token IDs
-    - input_row_offsets_or_attn_mask: A tensor containing the offsets for each row in the ragged input sequence,
-    or the attention mask for the padded input sequence
+    This class encapsulates the input tensors required for the Llama3 model
+    execution.
     """
 
     tokens: Tensor
+    """Tensor containing the input token IDs."""
+
     input_row_offsets_or_attn_mask: Tensor
+    """Tensor containing the offsets for each row in the ragged input sequence,
+    or the attention mask for the padded input sequence."""
+
+    signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
 
     def __init__(
         self,
         tokens: Tensor,
         input_row_offsets_or_attn_mask: Tensor,
+        signal_buffers: list[Tensor],
     ) -> None:
+        """
+        Args:
+            tokens: Input token IDs.
+            input_row_offsets_or_attn_mask: Input row offsets (ragged tensors)
+                or attention mask (padded tensors).
+            signal_buffers: Device buffers used for synchronization in
+                communication collectives.
+        """
         self.tokens = tokens
         self.input_row_offsets_or_attn_mask = input_row_offsets_or_attn_mask
+        self.signal_buffers = signal_buffers
 
     @property
     def input_row_offsets(self) -> Tensor:
@@ -75,11 +90,40 @@ class Llama3Inputs(ModelInputs):
 
 
 class Llama3Model(PipelineModel):
+    """Llama 3 pipeline model implementation."""
+
+    model: Model
+    """Compiled and initialized model ready for inference."""
+
+    signal_buffers: list[Tensor]
+    """Device buffers used for synchronization in communication collectives."""
+
     def __init__(
         self, pipeline_config: PipelineConfig, session: InferenceSession
     ) -> None:
+        """
+        Args:
+            pipeline_config: The configuration for this pipeline.
+            session: The container for the runtime for this model.
+        """
         super().__init__(pipeline_config, session)
         self.model = self.load_model(session)
+
+        # Initialize state needed for communication collectives.
+        self.signal_buffers = (
+            [
+                Tensor.zeros(
+                    shape=(ops.allreduce.Signals.NUM_BYTES,),
+                    dtype=DType.uint8,
+                    device=dev,
+                )
+                for dev in pipeline_config.devices
+            ]
+            if len(pipeline_config.devices) > 1
+            # Skip creating buffers for single-device, where communication
+            # collectives shouldn't be called.
+            else []
+        )
 
     @classmethod
     def get_kv_params(cls, pipeline_config: PipelineConfig) -> KVCacheParams:
@@ -109,6 +153,7 @@ class Llama3Model(PipelineModel):
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets_or_attn_mask,
+            *model_inputs.signal_buffers,
             *kv_cache_inputs,
             copy_inputs_to_device=(
                 not self.pipeline_config.cache_strategy.uses_opaque()
@@ -143,6 +188,7 @@ class Llama3Model(PipelineModel):
             input_row_offsets_or_attn_mask=Tensor.from_numpy(
                 input_row_offsets
             ).to(self.pipeline_config.devices[0]),
+            signal_buffers=self.signal_buffers,
         )
 
     def _prepare_padded_initial_token_inputs(
@@ -163,6 +209,7 @@ class Llama3Model(PipelineModel):
         return Llama3Inputs(
             tokens=next_tokens_batch,
             input_row_offsets_or_attn_mask=attn_mask,
+            signal_buffers=self.signal_buffers,
         )
 
     def prepare_initial_token_inputs(
@@ -187,6 +234,7 @@ class Llama3Model(PipelineModel):
         return Llama3Inputs(
             tokens=next_tokens,
             input_row_offsets_or_attn_mask=next_row_offsets,
+            signal_buffers=self.signal_buffers,
         )
 
     def _prepare_padded_next_token_inputs(
@@ -206,6 +254,7 @@ class Llama3Model(PipelineModel):
         return Llama3Inputs(
             tokens=next_tokens_batch,
             input_row_offsets_or_attn_mask=attn_mask,
+            signal_buffers=self.signal_buffers,
         )
 
     def prepare_next_token_inputs(
@@ -323,8 +372,8 @@ class Llama3Model(PipelineModel):
             return model
 
     def _unflatten_kv_inputs(
-        self, kv_inputs_flat: Sequence[Tensor]
-    ) -> List[tuple[Tensor, ...]]:
+        self, kv_inputs_flat: Sequence[TensorValue]
+    ) -> List[tuple[TensorValue, ...]]:
         kv_params = self.get_kv_params(self.pipeline_config)
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()
@@ -360,11 +409,19 @@ class Llama3Model(PipelineModel):
             kv_cache_args = self.kv_manager.input_symbols()
             flattened_kv_types = self._flatten_kv_inputs(kv_cache_args)
 
+            # Create metadata for signal buffers.
+            signals = ops.allreduce.Signals(
+                devices=(
+                    DeviceRef(d.label, d.id)
+                    for d in self.pipeline_config.devices
+                )
+            )
             with Graph(
                 "llama3",
                 input_types=[
                     tokens_type,
                     input_row_offsets_type,
+                    *signals.input_types(),
                     *flattened_kv_types,
                 ],
             ) as graph:
@@ -377,11 +434,25 @@ class Llama3Model(PipelineModel):
                     ),
                     kv_params=self.get_kv_params(self.pipeline_config),
                 )
-                tokens, input_row_offsets, *kv_cache = graph.inputs
+                tokens, input_row_offsets, *variadic_args = graph.inputs
+
+                # Multi-GPU passes a signal buffer per device: unmarshal those.
+                signal_buffers = [
+                    v.buffer
+                    for v in variadic_args[: len(self.pipeline_config.devices)]
+                ]
+
+                # Unmarshal the remaining arguments, which are for KV cache.
+                kv_cache = [
+                    v.tensor
+                    for v in variadic_args[len(self.pipeline_config.devices) :]
+                ]
+
                 kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
 
                 outputs = model(
                     tokens,
+                    signal_buffers,
                     kv_caches_per_dev,
                     input_row_offsets=input_row_offsets,
                 )

@@ -16,7 +16,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Union
 
-from max.graph import TensorValue, TensorValueLike
+from max.graph import BufferValue, TensorValue, TensorValueLike
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
@@ -119,6 +119,7 @@ class DistributedAttentionImpl(ABC, Layer):
     def __call__(
         self,
         x: list[TensorValue],
+        signal_buffers: list[BufferValue],
         kv_collections: list[ContinuousBatchingKVCacheCollection],
         **kwargs,
     ) -> list[TensorValue]: ...

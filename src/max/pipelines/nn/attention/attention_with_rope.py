@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from typing import List, Optional, Union
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, ops
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     PagedKVCacheCollection,
@@ -115,6 +115,7 @@ class DistributedAttentionWithRope(DistributedAttentionImpl):
     def __call__(
         self,
         x: List[TensorValue],
+        signal_buffers: List[BufferValue],
         kv_collections: List[ContinuousBatchingKVCacheCollection],
         **kwargs,
     ) -> List[TensorValue]:
@@ -124,14 +125,15 @@ class DistributedAttentionWithRope(DistributedAttentionImpl):
 
         return list(
             ops.allreduce.sum(
-                [
+                inputs=[
                     self.list_of_attentions[i](
                         x[i],
                         kv_collections[i],
                         input_row_offsets=input_row_offsets_[i],
                     )
                     for i in range(len(self.devices))
-                ]
+                ],
+                signal_buffers=signal_buffers,
             )
         )
 

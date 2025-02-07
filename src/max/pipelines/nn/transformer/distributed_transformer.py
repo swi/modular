@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from typing import List
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
@@ -50,15 +50,16 @@ class DistributedTransformerBlock(Layer):
     def __call__(
         self,
         xs: List[TensorValue],
+        signal_buffers: list[BufferValue],
         kv_collections: List[ContinuousBatchingKVCacheCollection],
         **kwargs,
     ) -> List[TensorValue]:
         attn_outs = self.attention(
-            self.attention_norm(xs), kv_collections, **kwargs
+            self.attention_norm(xs), signal_buffers, kv_collections, **kwargs
         )
 
         hs = [x + attn_out for x, attn_out in zip(xs, attn_outs)]
-        mlp_outs = self.mlp(self.mlp_norm(hs))
+        mlp_outs = self.mlp(self.mlp_norm(hs), signal_buffers)
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs)]
 
         return hs
@@ -82,6 +83,7 @@ class DistributedTransformer(Layer):
     def __call__(
         self,
         tokens: TensorValueLike,
+        signal_buffers: list[BufferValue],
         kv_cache_inputs_per_dev: List[
             tuple[TensorValue, TensorValue, TensorValue, TensorValue]
         ],
@@ -96,7 +98,7 @@ class DistributedTransformer(Layer):
         ]
 
         for _, layer in enumerate(self.layers):
-            h = layer(h, kv_collections, **kwargs)
+            h = layer(h, signal_buffers, kv_collections, **kwargs)
 
         h0 = h[0]  # All the outputs are the same here.
         if self.all_logits:

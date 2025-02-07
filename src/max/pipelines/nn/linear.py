@@ -20,7 +20,14 @@ from typing import Optional
 
 import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, Weight, ops
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    TensorValue,
+    TensorValueLike,
+    Weight,
+    ops,
+)
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import Weights
 
@@ -361,6 +368,8 @@ class DistributedMLP(Layer):
     list_of_mlps: list[MLP]
     num_devices: int
 
-    def __call__(self, x: list[TensorValue]) -> list[TensorValue]:
+    def __call__(
+        self, x: list[TensorValue], signal_buffers: list[BufferValue]
+    ) -> list[TensorValue]:
         mlp_outs = [self.list_of_mlps[i](x[i]) for i in range(self.num_devices)]
-        return ops.allreduce.sum(mlp_outs)  # type: ignore
+        return ops.allreduce.sum(mlp_outs, signal_buffers)
