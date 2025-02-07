@@ -452,11 +452,20 @@ class TextGenerationPipeline(TokenGenerator[T]):
                     msg = "json_schema provided but constrained decoding is not enabled."
                     raise ValueError(msg)
 
-                compiled_grammar = self._grammar_compiler.compile_json_schema(
-                    context.json_schema
-                )
-                matcher = xgr.GrammarMatcher(compiled_grammar)
-                context.set_matcher(matcher)
+                try:
+                    compiled_grammar = (
+                        self._grammar_compiler.compile_json_schema(
+                            context.json_schema
+                        )
+                    )
+                    matcher = xgr.GrammarMatcher(compiled_grammar)
+                    context.set_matcher(matcher)
+                except Exception as e:
+                    msg = f"Json schema provided in request cannot be compiled to valid grammar. \
+                    Please update your json schema to produce valid structured output. From XGrammar: {e}"
+                    logger.warning(msg)
+                    # I am removing the json_schema, so it doesn't try to load the grammar repeatedly.
+                    context.json_schema = None  # type: ignore
 
             # Claim cache rows for context.
             if not self._pipeline_model.kv_manager.contains(
