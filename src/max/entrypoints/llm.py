@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import asyncio
 import queue
+import threading
 from queue import Queue
-from threading import Event, Thread
+from threading import Thread
 from typing import Optional, Sequence
 
 import tqdm
@@ -30,6 +31,7 @@ from max.serve.pipelines.llm import (
     batch_config_from_pipeline_config,
 )
 from max.serve.pipelines.model_worker import start_model_worker
+from max.serve.scheduler.process_control import ProcessControl
 
 RequestQueue = Queue[tuple[Sequence[str], Optional[int], bool]]
 ResponseQueue = Queue[list[str]]
@@ -41,31 +43,30 @@ ResponseQueue = Queue[list[str]]
 class LLM:
     """A high level interface for interacting with LLMs."""
 
+    _pc: ProcessControl
     _async_runner: Thread
-    _shutdown: Event
     _request_queue: RequestQueue
     _response_queue: ResponseQueue
 
     def __init__(self, pipeline_config: PipelineConfig):
-        self._shutdown = Event()
+        self._pc = ProcessControl(threading, "LLM")
         self._request_queue = Queue()
         self._response_queue = Queue()
-        model_ready = Event()
         self._async_runner = Thread(
             target=_run_async_worker,
             args=(
+                self._pc,
                 pipeline_config,
-                model_ready,
-                self._shutdown,
                 self._request_queue,
                 self._response_queue,
             ),
         )
         self._async_runner.start()
-        model_ready.wait()
+        # TODO: set a timeout on wait
+        self._pc.started_event.wait()
 
     def __del__(self):
-        self._shutdown.set()
+        self._pc.set_canceled()
         self._async_runner.join()
 
     def generate(
@@ -83,17 +84,15 @@ class LLM:
 
 
 def _run_async_worker(
+    pc: ProcessControl,
     pipeline_config: PipelineConfig,
-    model_ready: Event,
-    shutdown: Event,
     request_queue: RequestQueue,
     response_queue: ResponseQueue,
 ):
     asyncio.run(
         _async_worker(
+            pc,
             pipeline_config,
-            model_ready,
-            shutdown,
             request_queue,
             response_queue,
         )
@@ -101,9 +100,8 @@ def _run_async_worker(
 
 
 async def _async_worker(
+    pc: ProcessControl,
     pipeline_config: PipelineConfig,
-    model_ready: Event,
-    shutdown: Event,
     request_queue: RequestQueue,
     response_queue: ResponseQueue,
 ):
@@ -127,9 +125,10 @@ async def _async_worker(
             engine_queue=engine_queue,
         ) as pipeline,
     ):
-        model_ready.set()
+        pc.set_started()
         while True:
-            if shutdown.is_set():
+            pc.beat()
+            if pc.is_canceled():
                 break
 
             try:
@@ -172,4 +171,5 @@ async def _async_worker(
                 response_queue.put(responses)
 
             except queue.Empty:
-                pass
+                continue
+        pc.set_completed()
