@@ -12,9 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """General interface for Attention."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Union
 
 from max.graph import BufferValue, TensorValue, TensorValueLike
 from max.pipelines.kv_cache import (
@@ -102,9 +103,8 @@ class AttentionImpl(ABC, Layer):
     def __call__(
         self,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: ContinuousBatchingKVCacheCollection
+        | PagedKVCacheCollection,
         **kwargs,
     ) -> TensorValue: ...
 
@@ -120,7 +120,9 @@ class DistributedAttentionImpl(ABC, Layer):
         self,
         x: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: list[ContinuousBatchingKVCacheCollection],
+        kv_collections: list[
+            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
+        ],
         **kwargs,
     ) -> list[TensorValue]: ...
 
@@ -206,8 +208,7 @@ class AttentionImplQKV(ABC, Layer):
     def __call__(
         self,
         x: TensorValue,
-        kv_collection: Union[
-            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
-        ],
+        kv_collection: ContinuousBatchingKVCacheCollection
+        | PagedKVCacheCollection,
         **kwargs,
     ) -> TensorValue: ...

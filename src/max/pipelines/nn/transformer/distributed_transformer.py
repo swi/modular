@@ -14,14 +14,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     FetchContinuousBatchingKVCacheCollection,
+    FetchPagedKVCacheCollection,
     KVCacheParams,
+    PagedKVCacheCollection,
 )
 
 from ..attention.interfaces import DistributedAttentionImpl
@@ -33,7 +34,7 @@ from ..norm import DistributedRMSNorm, LPLayerNorm, RMSNorm
 
 # TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
 # shard_row_value across the codebase into a multi gpu utils file
-def distribute_value(v, devices: List[DeviceRef]):
+def distribute_value(v, devices: list[DeviceRef]):
     return [v.to(device) for device in devices]
 
 
@@ -45,15 +46,17 @@ class DistributedTransformerBlock(Layer):
     mlp: DistributedMLP
     attention_norm: DistributedRMSNorm
     mlp_norm: DistributedRMSNorm
-    devices: List[DeviceRef]
+    devices: list[DeviceRef]
 
     def __call__(
         self,
-        xs: List[TensorValue],
+        xs: list[TensorValue],
         signal_buffers: list[BufferValue],
-        kv_collections: List[ContinuousBatchingKVCacheCollection],
+        kv_collections: list[
+            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
+        ],
         **kwargs,
-    ) -> List[TensorValue]:
+    ) -> list[TensorValue]:
         attn_outs = self.attention(
             self.attention_norm(xs), signal_buffers, kv_collections, **kwargs
         )
@@ -76,15 +79,17 @@ class DistributedTransformer(Layer):
     output: LinearV2
     embedding: Embedding
     kv_params: KVCacheParams
-    kv_collection_constructor: FetchContinuousBatchingKVCacheCollection
-    devices: List[DeviceRef]
+    kv_collection_constructor: (
+        FetchContinuousBatchingKVCacheCollection | FetchPagedKVCacheCollection
+    )
+    devices: list[DeviceRef]
     all_logits: bool = False
 
     def __call__(
         self,
         tokens: TensorValueLike,
         signal_buffers: list[BufferValue],
-        kv_cache_inputs_per_dev: List[
+        kv_cache_inputs_per_dev: list[
             tuple[TensorValue, TensorValue, TensorValue, TensorValue]
         ],
         **kwargs,

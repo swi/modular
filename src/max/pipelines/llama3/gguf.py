@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Build a Llama3 model via Graph API from GGUF weights."""
 
+from __future__ import annotations
+
 from typing import List, Optional, Union, cast
 
 from max.dtype import DType
@@ -317,6 +319,26 @@ def _attention_opaque(
     )
 
 
+def _kv_collection_constructor(
+    kv_params: KVCacheParams,
+) -> FetchContinuousBatchingKVCacheCollection | FetchPagedKVCacheCollection:
+    """Gets the fetch KV collection based on the KV cache strategy.
+
+    Returns:
+        Callable that stages an op to fetch a KV cache collection.
+
+    Raises:
+        ValueError: If the cache strategy is unsupported.
+    """
+    if kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
+        return FetchContinuousBatchingKVCacheCollection(kv_params)
+    elif kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        return FetchPagedKVCacheCollection(kv_params)
+
+    msg = f"Unsupported caching strategy {kv_params.cache_strategy}"
+    raise ValueError(msg)
+
+
 def distributed_transformer_opaque(
     graph: Graph,
     pipeline_config: PipelineConfig,
@@ -429,13 +451,6 @@ def distributed_transformer_opaque(
             ),
         )
 
-        if kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
-            kv_collection_cls = FetchContinuousBatchingKVCacheCollection
-        else:
-            raise ValueError(
-                "Unsupported caching strategy " + str(kv_params.cache_strategy)
-            )
-
         return DistributedTransformer(
             dim=pipeline_config.huggingface_config.hidden_size,
             n_heads=pipeline_config.huggingface_config.num_attention_heads,
@@ -448,7 +463,7 @@ def distributed_transformer_opaque(
             output=output,
             embedding=embedding_layer,
             kv_params=kv_params,
-            kv_collection_constructor=kv_collection_cls(kv_params),
+            kv_collection_constructor=_kv_collection_constructor(kv_params),
             devices=devices,
             all_logits=pipeline_config.enable_echo,
         )
@@ -534,15 +549,6 @@ def _transformer_opaque(
         else:
             output = Linear(embedding_layer.weights)
 
-        if kv_params.cache_strategy == KVCacheStrategy.CONTINUOUS:
-            kv_collection_cls = FetchContinuousBatchingKVCacheCollection
-        elif kv_params.cache_strategy == KVCacheStrategy.PAGED:
-            kv_collection_cls = FetchPagedKVCacheCollection
-        else:
-            raise ValueError(
-                "Unsupported caching strategy " + str(kv_params.cache_strategy)
-            )
-
         return Transformer(
             dim=pipeline_config.huggingface_config.hidden_size,
             n_heads=pipeline_config.huggingface_config.num_attention_heads,
@@ -555,7 +561,7 @@ def _transformer_opaque(
             output=output,
             embedding=embedding_layer,
             kv_params=kv_params,
-            kv_collection_constructor=kv_collection_cls(kv_params),
+            kv_collection_constructor=_kv_collection_constructor(kv_params),
             all_logits=pipeline_config.enable_echo,
         )
 

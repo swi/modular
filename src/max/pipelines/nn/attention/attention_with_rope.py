@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """An opaque KV Cache optimized attention mechanism with Rope."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import List, Optional, Union
 
@@ -116,7 +118,9 @@ class DistributedAttentionWithRope(DistributedAttentionImpl):
         self,
         x: List[TensorValue],
         signal_buffers: List[BufferValue],
-        kv_collections: List[ContinuousBatchingKVCacheCollection],
+        kv_collections: List[
+            ContinuousBatchingKVCacheCollection | PagedKVCacheCollection
+        ],
         **kwargs,
     ) -> List[TensorValue]:
         input_row_offsets = kwargs["input_row_offsets"]
