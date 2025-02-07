@@ -272,6 +272,16 @@ class PagedKVCacheManager(KVCacheManager):
         self.ce_all_tokens = 0
         self.ce_cache_hit_tokens = 0
 
+    def cache_hit_rate(self) -> float:
+        """Returns the prefix cache hit rate.
+
+        This is the number of CE prompt tokens that were read from the prefix
+        cache divided by the total number of CE prompt tokens.
+        """
+        if self.ce_all_tokens == 0:
+            return 0.0
+        return self.ce_cache_hit_tokens / self.ce_all_tokens
+
     def evict_blocks(self, percentage_to_evict: float = 1.0):
         if self.radix_trie is None:
             return
