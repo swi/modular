@@ -484,7 +484,7 @@ class PipelineConfig:
     # description to the `help()` method below
 
     huggingface_repo_id: str
-    """repo_id of a huggingface model repository to use."""
+    """repo_id of a Hugging Face model repository to use."""
 
     engine: Optional[PipelineEngine] = None
     """Engine backend to use for serving, 'max' for the max engine, or 'huggingface' as fallback option for improved model coverage."""
@@ -523,13 +523,13 @@ class PipelineConfig:
 
     max_ce_batch_size: int = 32
     """Maximum cache size to reserve for a single context encoding batch.
-    The actual limit is the lesser of this and max_batch_size."""
+    The actual limit is the lesser of this and `max_batch_size`."""
 
     cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT
-    """The cache strategy to use. This defaults to 'model_default', which will set the cache
+    """The cache strategy to use. This defaults to `model_default`, which will set the cache
     strategy based on the default strategy for the architecture requested.
 
-    You can also force the engine to use a specific caching strategy: 'naive', 'continuous', or 'paged'.
+    You can also force the engine to use a specific caching strategy: `naive` | `continuous` | `paged`.
     """
 
     max_num_steps: int = 1
@@ -563,7 +563,7 @@ class PipelineConfig:
     schema in the response_format field, which the LLM will adhere to."""
 
     trust_remote_code: bool = False
-    """Whether or not to allow for custom modelling files on Huggingface."""
+    """Whether or not to allow for custom modelling files on Hugging Face."""
 
     force_download: bool = False
     """Whether to force download a given file if it's not already present in the local cache."""
@@ -572,22 +572,22 @@ class PipelineConfig:
     """Whether the model should be built with echo capabilities."""
 
     rope_type: Optional[RopeType] = None
-    """Force using a specific rope type, 'none', 'normal', or 'neox'. Only matters for GGUF weights."""
+    """Force using a specific rope type: `none` | `normal` | `neox`. Only matters for GGUF weights."""
 
     pool_embeddings: bool = True
     """Whether to pool embedding outputs."""
 
     _huggingface_config: Optional[AutoConfig] = None
-    """The HuggingFace config associated with the huggingface repo id."""
+    """The Hugging Face config associated with the `huggingface-repo-id`."""
 
     _devices: list[Device] = field(default_factory=list)
-    """The underlying initialized devices, created by the specific device_specs."""
+    """The underlying initialized devices, created by the specific `device_specs`."""
 
     _weights_converter: Optional[type[WeightsConverter]] = None
     """Weight converter for the provided `weight_path`."""
 
     _weights_repo_id: Optional[str] = None
-    """Huggingface Repo id to load weights from only. This should only be set by internal code."""
+    """Hugging Face repo id to load weights from only. This should only be set by internal code."""
 
     _available_cache_memory: Optional[int] = None
     """The amount of available cache memory in bytes. This should only be set by internal code."""
@@ -597,13 +597,13 @@ class PipelineConfig:
 
     def __post_init__(self) -> None:
         if not self.huggingface_repo_id:
-            msg = "huggingface_repo_id must be provided and must be a valid HuggingFace repo or local directory"
+            msg = "huggingface_repo_id must be provided and must be a valid Hugging Face repo or local directory"
             raise ValueError(msg)
 
         if (not os.path.exists(self.huggingface_repo_id)) and (
             not repo_exists(self.huggingface_repo_id)
         ):
-            msg = f"{self.huggingface_repo_id} is not a valid HuggingFace repo, or local directory"
+            msg = f"{self.huggingface_repo_id} is not a valid Hugging Face repo, or local directory"
             raise ValueError(msg)
 
         # Default if weight_path is passed as None
@@ -648,7 +648,7 @@ class PipelineConfig:
                 weight_paths.append(path)
                 continue
 
-            # If the path, looks like it may start with a HuggingFace repo id,
+            # If the path, looks like it may start with a Hugging Face repo id,
             # check if the repo_id is the same as the one provided.
             # If it is the same, set the weight_path to just be the file_name post repo_id
             # If it is different, set the _weights_repo_id to be that repo_id
@@ -682,7 +682,7 @@ class PipelineConfig:
                 raise ValueError(msg)
 
     def __getstate__(self) -> dict[str, Any]:
-        """Override `__getstate__` to exclude the HuggingFace config."""
+        """Override `__getstate__` to exclude the Hugging Face config."""
         state = self.__dict__.copy()
         state.pop("_huggingface_config")
         state["_devices"] = []
@@ -706,29 +706,29 @@ class PipelineConfig:
             if architectures:
                 if len(architectures) > 1:
                     msg = (
-                        "more than one architecture listed in HuggingFace config,"
+                        "more than one architecture listed in Hugging Face config,"
                         " using the first one."
                     )
                     logger.warning(msg)
                 self.architecture = architectures[0]
             else:
-                msg = "architectures not listed in HuggingFace config, trying with general `huggingface` engine"
+                msg = "architectures not listed in Hugging Face config, trying with general `huggingface` engine"
                 logger.warning(msg)
 
                 self.engine = PipelineEngine.HUGGINGFACE
 
     @property
     def huggingface_config(self) -> AutoConfig:
-        """Given the huggingface_repo_id, return the HuggingFace Config."""
+        """Given the huggingface_repo_id, return the Hugging Face Config."""
 
         if self._huggingface_config is None:
-            # Lazy initialize the HuggingFace config field.
+            # Lazy initialize the Hugging Face config field.
             self._huggingface_config = AutoConfig.from_pretrained(
                 self.huggingface_repo_id,
                 trust_remote_code=self.trust_remote_code,
             )
             assert self._huggingface_config is not None, (
-                "Failed to load HuggingFace config"
+                "Failed to load Hugging Face config"
             )
 
         return self._huggingface_config
@@ -881,21 +881,21 @@ class PipelineConfig:
     @staticmethod
     def help() -> dict[str, str]:
         return {
-            "huggingface_repo_id": "Specify the repository ID of a Huggingface model repository to use. This is used to load both Tokenizers, architectures and model weights.",
-            "engine": "Specify the engine backend to use for serving the model. Options include 'max' for the MAX engine, or 'huggingface' as a fallback option that provides improved model coverage.",
+            "huggingface_repo_id": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
+            "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
             "architecture": "Deprecated - Please set `huggingface-repo-id` instead. Define the model architecture to run. This should match one of the supported architectures for your selected engine.",
-            "weight_path": "Provide an optional local path or path relative to the root of a Huggingface repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
+            "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "device_specs": "Devices to run inference upon. Default is set to CPU.",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
             "serialized_model_path": "If specified, this flag attempts to load a serialized MEF model from the given path. This is useful for reusing previously saved models.",
             "save_to_serialized_model_path": "If specified, this flag attempts to save the current model state to a serialized format at the given path for later use.",
-            "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the HuggingFace configuration file. The default is derived from the HuggingFace configuration value. Larger values may consume more memory.",
+            "max_length": "Set the maximum sequence length for input data processed by the model. This must be less than the value specified in the Hugging Face configuration file. The default is derived from the Hugging Face configuration value. Larger values may consume more memory.",
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",
-            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and max-cache-batch-size. Default is 32.",
-            "max_cache_batch_size": "DEPRECATED: Use max_batch_size instead.",
+            "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-cache-batch-size`. Default is 32.",
+            "max_cache_batch_size": "DEPRECATED: Use `max_batch_size` instead.",
             "cache_strategy": "Force a specific cache strategy: 'naive' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
-            "rope_type": "Force using a specific rope type, 'none', 'normal', or 'neox'. Only matters for GGUF weights.",
+            "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
             "max_num_steps": "Specify the number of steps to run for multi-step scheduling during inference. Default is set to 1.",
             "pad_to_multiple_of": "Pad input tensors to be a multiple of value provided. Default is set to 2.",
             "kv_cache_page_size": "The number of tokens in a single page in the paged KVCache. Default is set to 512.",
@@ -903,7 +903,7 @@ class PipelineConfig:
             "enable_structured_output": "Whether to enable constrained decoding in the text generation pipeline. This defaults to false.",
             "device_memory_utilization": "The fraction of available device memory that the process should consume. This is used to inform the size of the KVCache workspace: kv_cache_workspace = (total_free_memory * device_memory_utilization) - model_weights_size. Default is set to 0.9.",
             "top_k": "Limit sampling to the top K most probable tokens during generation. This can help control randomness and improve output quality. This defaults to 1, which defaults to greedy sampling.",
-            "trust_remote_code": "Indicate whether to allow custom modelling files from Huggingface repositories. Set this to true with caution, as it may introduce security risks.",
+            "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
             "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
         }
