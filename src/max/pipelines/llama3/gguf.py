@@ -709,4 +709,5 @@ def transformer(
             output=output,
             theta=pipeline_config.huggingface_config.rope_theta,
             embedding=embedding_layer,
+            output_type=DType.float32,
         )

@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from max.graph import TensorValue, TensorValueLike
+from max.dtype import DType
+from max.graph import TensorValue, TensorValueLike, ops
 
 from ..attention import NaiveAttentionWithRope
 from ..embedding import Embedding
@@ -68,6 +69,7 @@ class NaiveTransformer(Layer):
     output: Linear
     theta: float
     embedding: Embedding
+    output_type: DType | None = None
 
     def __call__(
         self,
@@ -89,4 +91,9 @@ class NaiveTransformer(Layer):
                 i,
             )
 
-        return (self.output(self.norm(h)),)
+        output = self.output(self.norm(h))
+        if self.output_type is not None:
+            casted_output = ops.cast(output, self.output_type)
+            return (casted_output,)
+        else:
+            return (output,)
