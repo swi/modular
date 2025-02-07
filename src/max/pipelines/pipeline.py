@@ -373,13 +373,15 @@ class TextGenerationPipeline(TokenGenerator[T]):
             self._eos_token_id = set([eos_token_id])
 
         # Create a grammar compiler if constrained decoding is enabled
+        self.vocab_size = None
         if pipeline_config.enable_structured_output:
             tokenizer = AutoTokenizer.from_pretrained(
                 pipeline_config.huggingface_repo_id
             )
+            self.vocab_size = len(tokenizer)
             tokenizer_info = xgr.TokenizerInfo.from_huggingface(
                 tokenizer,
-                vocab_size=pipeline_config.huggingface_config.vocab_size,
+                vocab_size=self.vocab_size,
             )
 
             self._grammar_compiler = xgr.GrammarCompiler(tokenizer_info)
@@ -429,10 +431,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
         tracer: Tracer = Tracer("prepare_batch")
 
         if self._pipeline_config.enable_structured_output:
+            assert self.vocab_size is not None
             bitmask = torch.ones(
                 xgr.get_bitmask_shape(
                     len(batch),
-                    self._pipeline_config.huggingface_config.vocab_size,
+                    self.vocab_size,
                 ),
                 dtype=torch.int32,
             )
@@ -576,12 +579,14 @@ class TextGenerationPipeline(TokenGenerator[T]):
             next_token_logits = model_outputs.next_token_logits
 
             if bitmask is not None:
+                assert self.vocab_size is not None
                 bits = 2 ** torch.arange(32, dtype=torch.int32)
                 bitmask = (bitmask.unsqueeze(-1) & bits) != 0
                 bitmask = bitmask.reshape(
                     len(context_batch),
-                    self._pipeline_config.huggingface_config.vocab_size,
+                    -1,
                 ).to(torch.bool)
+                bitmask = bitmask[:, 0 : self.vocab_size]
 
                 bitmask = Tensor.from_dlpack(bitmask).to(
                     self._pipeline_config.devices[0]
