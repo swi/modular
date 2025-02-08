@@ -465,6 +465,15 @@ class PagedKVCacheManager(KVCacheManager):
 
         return total_blocks_to_allocate <= num_free_blocks
 
+    def get_num_cached_tokens(self, prompt: np.ndarray) -> int:
+        """Returns the number of tokens in the CE prompt that are found in the
+        prefix cache.
+        """
+        if self.radix_trie is None:
+            return 0
+        _, cached_blocks = self.radix_trie.match_prefix(prompt[:-1])
+        return len(cached_blocks) * self.page_size
+
     def _fetch(
         self, seq_ids_and_prompts: dict[int, np.ndarray], num_steps: int = 1
     ) -> Sequence[tuple[Tensor, ...]]:
