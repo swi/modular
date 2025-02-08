@@ -42,7 +42,7 @@ from max.pipelines.kv_cache import (
 )
 from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
 
-from .gguf import transformer
+from .graph import transformer
 
 
 class Qwen2Inputs(ModelInputs):
