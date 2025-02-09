@@ -286,9 +286,10 @@ def fused_qk_ragged_rope(
         msg = f"unsupported cache strategy for fused_qk_ragged_rope: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, Union[int, str, DType]] = {
+    parameters: dict[str, Union[bool, int, str, DType]] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
+        "interleaved": interleaved,
     }
     if kv_params.cache_strategy == KVCacheStrategy.PAGED:
         assert kv_params.page_size is not None
@@ -299,14 +300,7 @@ def fused_qk_ragged_rope(
 
     return ops.inplace_custom(
         op_name,
-        values=[
-            input,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
-            ops.constant(interleaved, DType.bool),
-        ],
+        values=[input, input_row_offsets, kv_collection, freqs_cis, layer_idx],
         out_types=[
             TensorType(
                 dtype=input.dtype, shape=input.shape, device=input.device
@@ -348,9 +342,10 @@ def fused_qk_rope(
         msg = f"unsupported cache strategy for fused_qkv_matmul: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, Union[int, str, DType]] = {
+    parameters: dict[str, Union[bool, int, str, DType]] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
+        "interleaved": interleaved,
     }
     if kv_params.cache_strategy == KVCacheStrategy.PAGED:
         assert kv_params.page_size is not None
@@ -361,13 +356,7 @@ def fused_qk_rope(
 
     return ops.inplace_custom(
         op_name,
-        values=[
-            input,
-            kv_collection,
-            freqs_cis_2d,
-            layer_idx,
-            ops.constant(interleaved, DType.bool),
-        ],
+        values=[input, kv_collection, freqs_cis_2d, layer_idx],
         out_types=[
             TensorType(
                 dtype=input.dtype, shape=input.shape, device=input.device
