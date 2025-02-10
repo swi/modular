@@ -219,7 +219,7 @@ def matmul_kv_cache_ragged(
         raise ValueError(msg)
 
     if kv_params.cache_strategy != KVCacheStrategy.CONTINUOUS:
-        msg = f"unsupported cache strategy for fused_qkv_matmul: {kv_params.cache_strategy}"
+        msg = f"unsupported cache strategy for matmul_kv_cache_ragged: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
     parameters: dict[str, int | str | DType] = {
@@ -338,7 +338,7 @@ def fused_qk_rope(
         raise ValueError(msg)
 
     if kv_params.cache_strategy != KVCacheStrategy.CONTINUOUS:
-        msg = f"unsupported cache strategy for fused_qkv_matmul: {kv_params.cache_strategy}"
+        msg = f"unsupported cache strategy for fused_qk_rope: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
     parameters: dict[str, bool | int | str | DType] = {
@@ -461,7 +461,7 @@ def flash_attention_with_causal_mask(
         raise ValueError(msg)
 
     if kv_params.cache_strategy != KVCacheStrategy.CONTINUOUS:
-        msg = f"unsupported cache strategy for flash_attention: {kv_params.cache_strategy}"
+        msg = f"unsupported cache strategy for flash_attention_with_causal_mask: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
     cache_strategy_str = kv_params.cache_strategy.kernel_substring()
