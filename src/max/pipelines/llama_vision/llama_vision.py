@@ -1039,24 +1039,19 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         available_cache_memory: int,
         devices: list[Device],
     ) -> int:
-        """Estimates the size of the kv cache in bytes."""
         assert pipeline_config.max_batch_size is not None
-
-        num_cross_attn_layers = len(
-            pipeline_config.huggingface_config.text_config.cross_attention_layers
-        )
+        """Estimates the size of the kv cache in bytes."""
         return MultimodalKVCacheManager.estimated_memory_size(
             params=cls.get_kv_params(pipeline_config),
             max_batch_size=pipeline_config.max_batch_size,
             max_seq_len=cls.calculate_max_seq_len(pipeline_config),
-            num_layers=pipeline_config.huggingface_config.text_config.num_hidden_layers
-            - num_cross_attn_layers,
+            num_layers=pipeline_config.huggingface_config.text_config.num_hidden_layers,
             available_cache_memory=available_cache_memory,
             devices=devices,
             max_vision_seq_len=cls._calculate_vision_max_seq_len(
                 pipeline_config
             ),
-            num_vision_layers=num_cross_attn_layers,
+            num_vision_layers=pipeline_config.huggingface_config.vision_config.num_hidden_layers,
         )
 
     @classmethod
@@ -1065,30 +1060,16 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         pipeline_config: PipelineConfig,
         available_cache_memory: int,
     ) -> int:
-        if (
-            len(pipeline_config.devices) == 1
-            and pipeline_config.devices[0].is_host
-        ):
-            return 1
-
-        num_cross_attn_layers = len(
-            pipeline_config.huggingface_config.text_config.cross_attention_layers
-        )
-        optimal_batch_size = MultimodalKVCacheManager.infer_optimal_batch_size(
+        return MultimodalKVCacheManager.infer_optimal_batch_size(
             params=cls.get_kv_params(pipeline_config),
             max_seq_len=cls.calculate_max_seq_len(pipeline_config),
-            num_layers=pipeline_config.huggingface_config.text_config.num_hidden_layers
-            - num_cross_attn_layers,
+            num_layers=pipeline_config.huggingface_config.text_config.num_hidden_layers,
             available_cache_memory=available_cache_memory,
             devices=pipeline_config.devices,
             max_vision_seq_len=cls._calculate_vision_max_seq_len(
                 pipeline_config
             ),
-            num_vision_layers=num_cross_attn_layers,
-        )
-        return max(
-            cls._MIN_DEFAULT_BATCH_SIZE,
-            min(optimal_batch_size, cls._MAX_DEFAULT_BATCH_SIZE),
+            num_vision_layers=pipeline_config.huggingface_config.vision_config.num_hidden_layers,
         )
 
     def load_model(
