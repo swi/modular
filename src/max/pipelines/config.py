@@ -688,6 +688,22 @@ class PipelineConfig:
         state["_devices"] = []
         return state
 
+    @property
+    def graph_quantization_encoding(self) -> Optional[QuantizationEncoding]:
+        """Converts the CLI encoding to a MAX graph quantization encoding.
+
+        Returns:
+            The graph quantization encoding corresponding to the CLI encoding.
+
+        Raises:
+            ValueError: If no CLI encoding was specified.
+        """
+        if self.quantization_encoding is None:
+            msg = "can't convert `None` CLI encoding to graph quantization encoding"
+            raise ValueError(msg)
+
+        return self.quantization_encoding.quantization_encoding
+
     def update_architecture(self) -> None:
         if self.architecture is None:
             # Retrieve architecture from huggingface_repo_id.

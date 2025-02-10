@@ -15,14 +15,14 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import List, Sequence, Union, cast
+from typing import List, Sequence, cast
 
 import numpy as np
-from max.driver import CPU, Tensor
+from max.driver import CPU, Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.graph.weights import GGUFWeights
+from max.graph.weights import Weights
 from max.pipelines import (
     LogProbabilities,
     ModelInputs,
@@ -42,7 +42,12 @@ from max.pipelines.kv_cache import (
 )
 from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
 
-from .gguf import distributed_transformer_opaque, transformer
+from .gguf import (
+    NaiveTransformer,
+    Transformer,
+    distributed_transformer_opaque,
+    transformer,
+)
 
 logger = logging.getLogger("max.pipelines")
 
@@ -54,10 +59,10 @@ class Llama3Inputs(ModelInputs):
     execution.
     """
 
-    tokens: Tensor
+    tokens: np.ndarray | Tensor
     """Tensor containing the input token IDs."""
 
-    input_row_offsets_or_attn_mask: Tensor
+    input_row_offsets_or_attn_mask: np.ndarray | Tensor
     """Tensor containing the offsets for each row in the ragged input sequence,
     or the attention mask for the padded input sequence."""
 
@@ -66,8 +71,8 @@ class Llama3Inputs(ModelInputs):
 
     def __init__(
         self,
-        tokens: Tensor,
-        input_row_offsets_or_attn_mask: Tensor,
+        tokens: np.ndarray | Tensor,
+        input_row_offsets_or_attn_mask: np.ndarray | Tensor,
         signal_buffers: list[Tensor],
     ) -> None:
         """
@@ -83,7 +88,7 @@ class Llama3Inputs(ModelInputs):
         self.signal_buffers = signal_buffers
 
     @property
-    def input_row_offsets(self) -> Tensor:
+    def input_row_offsets(self) -> np.ndarray | Tensor:
         """Gets the row offsets of the ragged input sequence."""
         # TODO(bduke): this should implement a ragged tensor interface.
         return self.input_row_offsets_or_attn_mask
@@ -150,6 +155,9 @@ class Llama3Model(PipelineModel[TextContext]):
         kv_cache_inputs: Sequence[Tensor] | None = None,
     ) -> ModelOutputs:
         model_inputs = cast(Llama3Inputs, model_inputs)
+        if kv_cache_inputs is None:
+            kv_cache_inputs = ()
+
         model_outputs = self.model.execute(
             model_inputs.tokens,
             model_inputs.input_row_offsets_or_attn_mask,
@@ -162,11 +170,13 @@ class Llama3Model(PipelineModel[TextContext]):
 
         if self.pipeline_config.enable_echo:
             return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[1],
+                next_token_logits=cast(Tensor, model_outputs[0]),
+                logits=cast(Tensor, model_outputs[1]),
             )
         else:
-            return ModelOutputs(next_token_logits=model_outputs[0])
+            return ModelOutputs(
+                next_token_logits=cast(Tensor, model_outputs[0])
+            )
 
     def _prepare_ragged_initial_token_inputs(
         self, context_batch: Sequence[TextContext]
@@ -237,26 +247,6 @@ class Llama3Model(PipelineModel[TextContext]):
             signal_buffers=self.signal_buffers,
         )
 
-    def _prepare_padded_next_token_inputs(
-        self,
-        next_tokens: Tensor,
-        prev_model_inputs: Llama3Inputs,
-    ) -> Llama3Inputs:
-        batch_size = prev_model_inputs.tokens.shape[0]
-        start_pos = [
-            prev_model_inputs.input_row_offsets_or_attn_mask.shape[-1]
-        ] * batch_size
-        next_tokens_batch, _, attn_mask = batch_padded_tokens_and_mask(
-            start_pos=start_pos,
-            tokens=next_tokens,
-            pad_to_multiple_of=self.pipeline_config.pad_to_multiple_of,
-        )
-        return Llama3Inputs(
-            tokens=next_tokens_batch,
-            input_row_offsets_or_attn_mask=attn_mask,
-            signal_buffers=self.signal_buffers,
-        )
-
     def prepare_next_token_inputs(
         self,
         next_tokens: Tensor,
@@ -271,9 +261,9 @@ class Llama3Model(PipelineModel[TextContext]):
                 next_tokens, prev_model_inputs
             )
         else:
-            return self._prepare_padded_next_token_inputs(
-                next_tokens, prev_model_inputs
-            )
+            # TODO(MODELS-407): Consider deleting the padded path entirely.
+            msg = "multistep unsupported for padded token batches"
+            raise ValueError(msg)
 
     @classmethod
     def calculate_max_seq_len(cls, pipeline_config: PipelineConfig) -> int:
@@ -389,12 +379,7 @@ class Llama3Model(PipelineModel[TextContext]):
         ]
         return kv_caches_per_dev
 
-    def _flatten_kv_inputs(
-        self, kv_caches_per_dev: List[tuple[Union[Tensor, TensorType], ...]]
-    ) -> Sequence[Union[Tensor, TensorType]]:
-        return [item for sublist in kv_caches_per_dev for item in sublist]
-
-    def _build_opaque_graph(self, weights: GGUFWeights) -> Graph:
+    def _build_opaque_graph(self, weights: Weights) -> Graph:
         device0 = self.pipeline_config.devices[0]
         device_ref = DeviceRef(device0.label, device0.id)
         tokens_type = TensorType(
@@ -407,7 +392,9 @@ class Llama3Model(PipelineModel[TextContext]):
 
         if len(self.pipeline_config.devices) > 1:
             kv_cache_args = self.kv_manager.input_symbols()
-            flattened_kv_types = self._flatten_kv_inputs(kv_cache_args)
+            flattened_kv_types = [
+                kv_type for sublist in kv_cache_args for kv_type in sublist
+            ]
 
             # Create metadata for signal buffers.
             signals = ops.allreduce.Signals(
@@ -425,7 +412,7 @@ class Llama3Model(PipelineModel[TextContext]):
                     *flattened_kv_types,
                 ],
             ) as graph:
-                model = distributed_transformer_opaque(
+                distributed_model = distributed_transformer_opaque(
                     graph=graph,
                     pipeline_config=self.pipeline_config,
                     weights=weights,
@@ -450,8 +437,8 @@ class Llama3Model(PipelineModel[TextContext]):
 
                 kv_caches_per_dev = self._unflatten_kv_inputs(kv_cache)
 
-                outputs = model(
-                    tokens,
+                outputs = distributed_model(
+                    tokens.tensor,
                     signal_buffers,
                     kv_caches_per_dev,
                     input_row_offsets=input_row_offsets,
@@ -459,14 +446,12 @@ class Llama3Model(PipelineModel[TextContext]):
                 graph.output(*outputs)
                 return graph
         else:
-            kv_cache_args = self.kv_manager.input_symbols()[0]
-
             with Graph(
                 "llama3",
                 input_types=[
                     tokens_type,
                     input_row_offsets_type,
-                    *kv_cache_args,
+                    *self.kv_manager.input_symbols()[0],
                 ],
             ) as graph:
                 model = transformer(
@@ -478,16 +463,18 @@ class Llama3Model(PipelineModel[TextContext]):
                     ),
                     kv_params=self.get_kv_params(self.pipeline_config),
                 )
-                tokens, input_row_offsets, *kv_cache = graph.inputs
+                assert isinstance(model, Transformer)
+
+                tokens, input_row_offsets, *kv_cache_inputs = graph.inputs
                 outputs = model(
-                    tokens,
-                    kv_cache,
+                    tokens.tensor,
+                    [inp.tensor for inp in kv_cache_inputs],
                     input_row_offsets=input_row_offsets,
                 )
                 graph.output(*outputs)
                 return graph
 
-    def _build_graph(self, weights: GGUFWeights) -> Graph:
+    def _build_graph(self, weights: Weights) -> Graph:
         if self.pipeline_config.cache_strategy.uses_opaque():
             return self._build_opaque_graph(weights)
 
@@ -518,6 +505,8 @@ class Llama3Model(PipelineModel[TextContext]):
                 max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
                 kv_params=self.get_kv_params(self.pipeline_config),
             )
+            assert isinstance(model, NaiveTransformer)
+
             tokens, attention_mask, k_cache, v_cache, start_pos, _ = (
                 graph.inputs
             )
@@ -535,11 +524,11 @@ class Llama3Model(PipelineModel[TextContext]):
                 )
             )
             logits = model(
-                tokens,
-                attention_mask.cast(mask_dtype),
-                k_cache,
-                v_cache,
-                start_pos,
+                tokens.tensor,
+                attention_mask.tensor.cast(mask_dtype),
+                k_cache.buffer,
+                v_cache.buffer,
+                start_pos.tensor,
             )[0]
 
             if self.pipeline_config.enable_echo:
@@ -570,16 +559,21 @@ class Llama3Model(PipelineModel[TextContext]):
                 )
                 return None
             logits = model_outputs.logits.to_numpy()
-        next_token_logits = model_outputs.next_token_logits.to_numpy()
+
+        llama3_inputs = cast(Llama3Inputs, model_inputs)
+        next_token_logits = cast(
+            Tensor, model_outputs.next_token_logits
+        ).to_numpy()
 
         sampled_tokens = next_tokens.to_numpy()
         if self.pipeline_config.cache_strategy.uses_opaque():
             # Handle the ragged inputs
-            model_inputs = cast(Llama3Inputs, model_inputs)
-            tokens = model_inputs.tokens.to_numpy()
-            input_row_offsets = model_inputs.input_row_offsets.to(
-                CPU()
-            ).to_numpy()
+            tokens = cast(Tensor, llama3_inputs.tokens).to_numpy()
+            input_row_offsets = (
+                cast(Tensor, llama3_inputs.input_row_offsets)
+                .to(CPU())
+                .to_numpy()
+            )
 
             def _get_logits_and_samples(
                 batch_index: int, echo: bool
@@ -604,7 +598,7 @@ class Llama3Model(PipelineModel[TextContext]):
         else:
             # Handle batched inputs. Llama pads them to the right so the seq
             # lengths can be computed by finding the first 0 token.
-            tokens = model_inputs.tokens
+            tokens = cast(np.ndarray, llama3_inputs.tokens)
             seq_lens = np.sum(tokens > 0, axis=1)
 
             def _get_logits_and_samples(

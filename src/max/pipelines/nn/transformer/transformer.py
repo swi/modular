@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from max.dtype import DType
@@ -80,9 +81,7 @@ class Transformer(Layer):
     def __call__(
         self,
         tokens: TensorValueLike,
-        kv_cache_inputs: tuple[
-            TensorValue, TensorValue, TensorValue, TensorValue
-        ],
+        kv_cache_inputs: Sequence[TensorValue],
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         # TODO: Split into a ragged and non-ragged version.

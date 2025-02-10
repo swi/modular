@@ -66,7 +66,9 @@ EXAONE_GGUF_TENSOR_MAPPING = {
 
 class SafetensorAdapter(WeightsConverter):
     @staticmethod
-    def load_weights(mapping, weight_path: list[Path], **kwargs):
+    def _load_weights(
+        mapping: Mapping[str, str], weight_path: list[Path], **kwargs
+    ):
         config = kwargs["config"]
 
         huggingface_config = config.huggingface_config
@@ -91,7 +93,7 @@ class SafetensorAdapter(WeightsConverter):
 class ExaoneSafetensorAdapter(SafetensorAdapter):
     @staticmethod
     def load_weights(weight_path: list[Path], **kwargs):
-        return SafetensorAdapter.load_weights(
+        return SafetensorAdapter._load_weights(
             EXAONE_GGUF_TENSOR_MAPPING, weight_path, **kwargs
         )
 
@@ -99,7 +101,7 @@ class ExaoneSafetensorAdapter(SafetensorAdapter):
 class LlamaSafetensorAdapter(SafetensorAdapter):
     @staticmethod
     def load_weights(weight_path: list[Path], **kwargs):
-        return SafetensorAdapter.load_weights(
+        return SafetensorAdapter._load_weights(
             LLAMA_GGUF_TENSOR_MAPPING, weight_path, **kwargs
         )
 

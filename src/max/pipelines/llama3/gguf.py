@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Union, cast
+from typing import List, Optional, Union
 
 from max.dtype import DType
 from max.graph import (
@@ -26,7 +26,11 @@ from max.graph import (
 )
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import Weights
-from max.pipelines import PipelineConfig, RopeType, WeightsFormat
+from max.pipelines import (
+    PipelineConfig,
+    RopeType,
+    WeightsFormat,
+)
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
@@ -67,7 +71,7 @@ def shard_col_value(
 ) -> List[TensorValue]:
     n_devices = len(devices)
     v = TensorValue(x)
-    col_size = v.shape[1].dim // n_devices
+    col_size = int(v.shape[1]) // n_devices
     return [
         v[:, i * col_size : (i + 1) * col_size].to(device)
         for i, device in enumerate(devices)
@@ -79,7 +83,7 @@ def shard_row_value(
 ) -> List[TensorValue]:
     n_devices = len(devices)
     v = TensorValue(x)
-    row_size = v.shape[0].dim // n_devices
+    row_size = int(v.shape[0]) // n_devices
     return [
         v[i * row_size : (i + 1) * row_size, :].to(device)
         for i, device in enumerate(devices)
@@ -156,7 +160,7 @@ def embedding(
             weights.weight.allocate(
                 pipeline_config.dtype,
                 [vocab_size, hidden_dim],
-                pipeline_config.quantization_encoding.quantization_encoding,
+                pipeline_config.graph_quantization_encoding,
             )
         )
 
@@ -209,7 +213,7 @@ def distributed_attention_opaque(
                 pipeline_config.huggingface_config.hidden_size,
                 pipeline_config.huggingface_config.hidden_size,
             ],
-            pipeline_config.quantization_encoding.quantization_encoding,
+            pipeline_config.graph_quantization_encoding,
         ),
         0,
         1,
@@ -222,7 +226,7 @@ def distributed_attention_opaque(
         weights.attn_k.weight.allocate(
             pipeline_config.dtype,
             [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
-            pipeline_config.quantization_encoding.quantization_encoding,
+            pipeline_config.graph_quantization_encoding,
         ),
         0,
         1,
@@ -231,7 +235,7 @@ def distributed_attention_opaque(
         weights.attn_v.weight.allocate(
             pipeline_config.dtype,
             [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
-            pipeline_config.quantization_encoding.quantization_encoding,
+            pipeline_config.graph_quantization_encoding,
         ),
         0,
         1,
@@ -243,7 +247,7 @@ def distributed_attention_opaque(
             pipeline_config.huggingface_config.hidden_size,
             pipeline_config.huggingface_config.hidden_size,
         ],
-        pipeline_config.quantization_encoding.quantization_encoding,
+        pipeline_config.graph_quantization_encoding,
     )
     wq_shards = shard_col_value(wq_full, devices)
     wk_shards = shard_col_value(wk_full, devices)
@@ -288,17 +292,17 @@ def _attention_opaque(
             pipeline_config.huggingface_config.hidden_size,
             pipeline_config.huggingface_config.hidden_size,
         ],
-        pipeline_config.quantization_encoding.quantization_encoding,
+        pipeline_config.graph_quantization_encoding,
     )
     wk = weights.attn_k.weight.allocate(
         pipeline_config.dtype,
         [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
-        pipeline_config.quantization_encoding.quantization_encoding,
+        pipeline_config.graph_quantization_encoding,
     )
     wv = weights.attn_v.weight.allocate(
         pipeline_config.dtype,
         [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
-        pipeline_config.quantization_encoding.quantization_encoding,
+        pipeline_config.graph_quantization_encoding,
     )
 
     wqkv = ops.concat((wq, wk, wv))
@@ -309,7 +313,7 @@ def _attention_opaque(
         wqkv=wqkv,
         wo=Linear.create(
             pipeline_config.dtype,
-            pipeline_config.quantization_encoding.quantization_encoding,
+            pipeline_config.graph_quantization_encoding,
             pipeline_config.huggingface_config.hidden_size,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_output,
@@ -379,9 +383,9 @@ def distributed_transformer_opaque(
                     layer_idx=ops.constant(i, DType.uint32),
                     devices=devices,
                 ),
-                mlp=distributed_feed_forward(  # type: ignore
+                mlp=distributed_feed_forward(
                     pipeline_config.dtype,
-                    pipeline_config.quantization_encoding.quantization_encoding,
+                    pipeline_config.graph_quantization_encoding,
                     pipeline_config.huggingface_config.hidden_size,
                     pipeline_config.huggingface_config.intermediate_size,
                     weights.blk[i],
@@ -447,7 +451,7 @@ def distributed_transformer_opaque(
             name=(
                 weights.output.name
                 if weights.output.weight.exists()
-                else cast(embedding_layer.weights, Weights).name
+                else embedding_layer.weight.name
             ),
         )
 
@@ -499,6 +503,7 @@ def _transformer_opaque(
             rms_norm_eps = pipeline_config.huggingface_config.layer_norm_epsilon
         else:
             rms_norm_eps = pipeline_config.huggingface_config.rms_norm_eps
+
         layers = [
             TransformerBlock(
                 attention=_attention_opaque(
@@ -510,7 +515,7 @@ def _transformer_opaque(
                 ),
                 mlp=feed_forward(
                     pipeline_config.dtype,
-                    pipeline_config.quantization_encoding.quantization_encoding,
+                    pipeline_config.graph_quantization_encoding,
                     pipeline_config.huggingface_config.hidden_size,
                     pipeline_config.huggingface_config.intermediate_size,
                     weights.blk[i],
@@ -541,7 +546,7 @@ def _transformer_opaque(
         if weights.output.weight.exists():
             output = Linear.create(
                 pipeline_config.dtype,
-                pipeline_config.quantization_encoding.quantization_encoding,
+                pipeline_config.graph_quantization_encoding,
                 pipeline_config.huggingface_config.vocab_size,
                 pipeline_config.huggingface_config.hidden_size,
                 weights.output,
@@ -582,28 +587,28 @@ def attention(
         dim=pipeline_config.huggingface_config.hidden_size,
         wk=Linear.create(
             pipeline_config.dtype,
-            pipeline_config.quantization_encoding.quantization_encoding,
+            pipeline_config.graph_quantization_encoding,
             kv_weight_dim,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_k,
         ),
         wv=Linear.create(
             pipeline_config.dtype,
-            pipeline_config.quantization_encoding.quantization_encoding,
+            pipeline_config.graph_quantization_encoding,
             kv_weight_dim,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_v,
         ),
         wq=Linear.create(
             pipeline_config.dtype,
-            pipeline_config.quantization_encoding.quantization_encoding,
+            pipeline_config.graph_quantization_encoding,
             pipeline_config.huggingface_config.hidden_size,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_q,
         ),
         wo=Linear.create(
             pipeline_config.dtype,
-            pipeline_config.quantization_encoding.quantization_encoding,
+            pipeline_config.graph_quantization_encoding,
             pipeline_config.huggingface_config.hidden_size,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_output,
@@ -658,7 +663,7 @@ def transformer(
                 ),
                 mlp=feed_forward(
                     pipeline_config.dtype,
-                    pipeline_config.quantization_encoding.quantization_encoding,
+                    pipeline_config.graph_quantization_encoding,
                     pipeline_config.huggingface_config.hidden_size,
                     pipeline_config.huggingface_config.intermediate_size,
                     weights.blk[i],
@@ -689,7 +694,7 @@ def transformer(
         if weights.output.weight.exists():
             output = Linear.create(
                 pipeline_config.dtype,
-                pipeline_config.quantization_encoding.quantization_encoding,
+                pipeline_config.graph_quantization_encoding,
                 pipeline_config.huggingface_config.vocab_size,
                 pipeline_config.huggingface_config.hidden_size,
                 weights.output,
