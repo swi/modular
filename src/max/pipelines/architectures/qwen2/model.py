@@ -72,7 +72,7 @@ class Qwen2Inputs(ModelInputs):
         return self.input_row_offsets_or_attn_mask
 
 
-class Qwen2Model(PipelineModel):
+class Qwen2Model(PipelineModel[TextContext]):
     def __init__(
         self, pipeline_config: PipelineConfig, session: InferenceSession
     ) -> None:
@@ -160,7 +160,7 @@ class Qwen2Model(PipelineModel):
     # Ignored type due to challenge with Interface implementation and mypy rules.
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],  # type: ignore
+        context_batch: Sequence[TextContext],
     ) -> Qwen2Inputs:
         """Prepare the inputs for the first pass in multistep execution."""
         if self.pipeline_config.cache_strategy.uses_opaque():

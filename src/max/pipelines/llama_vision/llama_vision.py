@@ -610,7 +610,7 @@ class LlamaVisionLanguageModel(Layer):
         return ops.cast(logits, DType.float32)
 
 
-class LlamaVision(PipelineModel):
+class LlamaVision(PipelineModel[TextAndVisionContext]):
     """The entire (multimodal) Llama3.2 vision model.
 
     A note on multi-step and vision inputs:
@@ -853,7 +853,7 @@ class LlamaVision(PipelineModel):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextAndVisionContext],  # type: ignore
+        context_batch: Sequence[TextAndVisionContext],
     ) -> LlamaVisionInputs:
         """Creates tensors of token and image inputs, if applicable."""
         if self.pipeline_config.cache_strategy != KVCacheStrategy.CONTINUOUS:

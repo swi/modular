@@ -89,7 +89,7 @@ class Llama3Inputs(ModelInputs):
         return self.input_row_offsets_or_attn_mask
 
 
-class Llama3Model(PipelineModel):
+class Llama3Model(PipelineModel[TextContext]):
     """Llama 3 pipeline model implementation."""
 
     model: Model

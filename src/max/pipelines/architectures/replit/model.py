@@ -16,7 +16,8 @@ from __future__ import annotations
 import logging
 import time
 import warnings
-from typing import Sequence, cast
+from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 from max.driver import Device, DeviceSpec, Tensor
@@ -64,7 +65,7 @@ class ReplitInputs(ModelInputs):
         self.input_row_offsets = input_row_offsets
 
 
-class ReplitModel(PipelineModel):
+class ReplitModel(PipelineModel[TextContext]):
     def __init__(
         self, pipeline_config: PipelineConfig, session: InferenceSession
     ) -> None:
@@ -102,7 +103,7 @@ class ReplitModel(PipelineModel):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: list[TextContext],  # type: ignore
+        context_batch: Sequence[TextContext],
     ) -> ReplitInputs:
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.

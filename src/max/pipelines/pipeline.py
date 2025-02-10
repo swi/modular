@@ -20,6 +20,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import (
     Any,
+    Generic,
     Optional,
     Protocol,
     Sequence,
@@ -128,7 +129,7 @@ class ModelOutputs:
 T = TypeVar("T", bound=InputContext)
 
 
-class PipelineModel(ABC):
+class PipelineModel(ABC, Generic[T]):
     """A pipeline model with setup, input preparation and execution methods."""
 
     def __init__(

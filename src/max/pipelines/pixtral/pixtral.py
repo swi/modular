@@ -15,7 +15,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Sequence, cast
+from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 from max.driver import Device, Tensor
@@ -80,7 +81,7 @@ class PixtralInputs(ModelInputs):
         return self._attention_mask
 
 
-class PixtralModel(PipelineModel):
+class PixtralModel(PipelineModel[TextAndVisionContext]):
     """The overall interface to the Pixtral model."""
 
     def __init__(
@@ -133,7 +134,7 @@ class PixtralModel(PipelineModel):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: list[TextAndVisionContext],  # type: ignore
+        context_batch: Sequence[TextAndVisionContext],
     ) -> PixtralInputs:
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_row_offsets = Tensor.from_numpy(

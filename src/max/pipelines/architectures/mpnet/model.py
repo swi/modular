@@ -19,7 +19,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Sequence, cast
+from collections.abc import Sequence
+from typing import cast
 
 import numpy as np
 from max.driver import Tensor
@@ -62,7 +63,7 @@ class MPNetInputs(ModelInputs):
         self.attention_mask = attention_mask
 
 
-class MPNetPipelineModel(PipelineModel):
+class MPNetPipelineModel(PipelineModel[TextContext]):
     def __init__(
         self, pipeline_config: PipelineConfig, session: InferenceSession
     ) -> None:
@@ -119,7 +120,7 @@ class MPNetPipelineModel(PipelineModel):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: list[TextContext],  # type: ignore
+        context_batch: Sequence[TextContext],
     ) -> MPNetInputs:
         # Get tokens and seq_ids.
         tokens = [ctx.next_tokens for ctx in context_batch]

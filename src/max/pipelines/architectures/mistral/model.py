@@ -61,7 +61,7 @@ class MistralInputs(ModelInputs):
         self.input_row_offsets = input_row_offsets
 
 
-class MistralModel(PipelineModel):
+class MistralModel(PipelineModel[TextContext]):
     def __init__(
         self, pipeline_config: PipelineConfig, session: InferenceSession
     ) -> None:
@@ -87,7 +87,7 @@ class MistralModel(PipelineModel):
 
     def prepare_initial_token_inputs(
         self,
-        context_batch: Sequence[TextContext],  # type: ignore
+        context_batch: Sequence[TextContext],
     ) -> MistralInputs:
         # Get tokens and seq ids
         tokens = [ctx.next_tokens for ctx in context_batch]
