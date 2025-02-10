@@ -26,8 +26,7 @@ from max.serve.api_server import (
     fastapi_app,
     fastapi_config,
 )
-from max.serve.config import APIType, Settings
-from max.serve.debug import DebugSettings
+from max.serve.config import Settings
 from max.serve.pipelines.llm import batch_config_from_pipeline_config
 from max.serve.pipelines.performance_fake import (
     PerformanceFakingPipelineTokenizer,
@@ -89,8 +88,7 @@ def serve_pipeline(
         pipeline_config.cache_strategy = KVCacheStrategy.CONTINUOUS
 
     # Initialize settings, and TokenGeneratorPipelineConfig.
-    settings = Settings(api_types=[APIType.OPENAI])
-    debug_settings = DebugSettings(profiling_enabled=profile)
+    settings = Settings()
 
     # Load batch config.
     batch_config = batch_config_from_pipeline_config(
@@ -104,19 +102,19 @@ def serve_pipeline(
         model_name = pipeline_config.huggingface_repo_id
         assert model_name is not None
 
-    serving_settings = ServingTokenGeneratorSettings(
+    pipeline_settings = ServingTokenGeneratorSettings(
         model_name=model_name,
         model_factory=pipeline_factory,
         pipeline_config=batch_config,
         tokenizer=tokenizer,
+        use_heartbeat=False,
     )
 
     # Intialize and serve webserver.
     app = fastapi_app(
         settings,
-        debug_settings,
-        serving_settings,
+        pipeline_settings,
     )
 
-    server = Server(fastapi_config(app=app))
+    server = Server(fastapi_config(app=app, server_settings=settings))
     uvloop.run(server.serve())
