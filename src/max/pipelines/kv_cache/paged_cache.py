@@ -667,7 +667,7 @@ class PagedKVCacheManager(KVCacheManager):
                     shape=[
                         self.num_layers,
                         2,
-                        self.total_num_pages,
+                        "total_num_pages",
                         self.page_size,
                         self.params.n_kv_heads_per_device,
                         self.params.head_dim,

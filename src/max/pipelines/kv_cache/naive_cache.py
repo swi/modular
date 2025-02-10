@@ -178,7 +178,7 @@ class NaiveKVCacheManager(KVCacheManager):
                 BufferType(
                     self.params.dtype,
                     shape=[
-                        self.max_seq_len,
+                        "max_seq_len",
                         self.num_layers,
                         "max_batch_size",
                         self.params.n_kv_heads,
@@ -189,7 +189,7 @@ class NaiveKVCacheManager(KVCacheManager):
                 BufferType(
                     self.params.dtype,
                     shape=[
-                        self.max_seq_len,
+                        "max_seq_len",
                         self.num_layers,
                         "max_batch_size",
                         self.params.n_kv_heads,
