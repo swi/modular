@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Union
 
 import numpy as np
 from max.dtype import DType
@@ -37,7 +36,7 @@ def fused_qkv_ragged_matmul(
     kv_collection: ContinuousBatchingKVCacheCollection | PagedKVCacheCollection,
     layer_idx: TensorValue,
     n_heads: int,
-    bias: Optional[TensorValue] = None,
+    bias: TensorValue | None = None,
 ) -> TensorValue:
     """Computes fused query, key, and value projections with ragged input.
 
@@ -78,7 +77,7 @@ def fused_qkv_ragged_matmul(
         msg = f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, Union[int, str, DType]] = {
+    parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
     }
@@ -223,7 +222,7 @@ def matmul_kv_cache_ragged(
         msg = f"unsupported cache strategy for fused_qkv_matmul: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, Union[int, str, DType]] = {
+    parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
     }
@@ -286,7 +285,7 @@ def fused_qk_ragged_rope(
         msg = f"unsupported cache strategy for fused_qk_ragged_rope: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, Union[bool, int, str, DType]] = {
+    parameters: dict[str, bool | int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
         "interleaved": interleaved,
@@ -342,7 +341,7 @@ def fused_qk_rope(
         msg = f"unsupported cache strategy for fused_qkv_matmul: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, Union[bool, int, str, DType]] = {
+    parameters: dict[str, bool | int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
         "interleaved": interleaved,
@@ -572,7 +571,7 @@ def flash_attention_ragged(
         msg = f"unsupported cache strategy for flash_attention_ragged: {kv_params.cache_strategy}"
         raise ValueError(msg)
 
-    parameters: dict[str, Union[int, str, DType]] = {
+    parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
     }
@@ -653,7 +652,7 @@ def cross_attention_ragged(
         )
         raise ValueError(msg)
 
-    parameters: dict[str, Union[int, str, DType]] = {
+    parameters: dict[str, int | str | DType] = {
         "num_heads": kv_params.n_kv_heads_per_device,
         "head_dim": kv_params.head_dim,
     }
