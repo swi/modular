@@ -280,6 +280,8 @@ class PipelineRegistry:
                     "Please use the flag --devices=cpu or --devices=gpu to configure the device."
                 )
 
+        pipeline_config.finalize_encoding_config()
+
         # We should now have a valid quantization_encoding, and possibly a weight_path.
         # If no weight_path is provided, we should grab the default.
         if not pipeline_config.weight_path:

@@ -685,16 +685,6 @@ class PipelineConfig:
 
         self.weight_path = weight_paths
 
-        if self.quantization_encoding == SupportedEncoding.gptq:
-            hf_quant_config = self.huggingface_config.quantization_config
-            self._quant_config = QuantizationConfig(
-                quant_method=hf_quant_config["quant_method"],
-                bits=hf_quant_config["bits"],
-                group_size=hf_quant_config["group_size"],
-                desc_act=hf_quant_config["desc_act"],
-                sym=hf_quant_config["sym"],
-            )
-
         if self.max_num_steps > 1 and self.enable_structured_output:
             msg = "max_num_steps > 1 not supported, when enable_structured_output = True"
             raise ValueError(msg)
@@ -726,6 +716,19 @@ class PipelineConfig:
             raise ValueError(msg)
 
         return self.quantization_encoding.quantization_encoding
+
+    def finalize_encoding_config(self):
+        """Depending on the encoding picked, we get some more parameters from the hf config"""
+        if self.quantization_encoding == SupportedEncoding.gptq:
+            hf_config = self.huggingface_config
+            hf_quant_config = hf_config.quantization_config
+            self._quant_config = QuantizationConfig(
+                quant_method=hf_quant_config["quant_method"],
+                bits=hf_quant_config["bits"],
+                group_size=hf_quant_config["group_size"],
+                desc_act=hf_quant_config["desc_act"],
+                sym=hf_quant_config["sym"],
+            )
 
     def update_architecture(self) -> None:
         if self.architecture is None:
