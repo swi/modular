@@ -14,8 +14,10 @@
 from dataclasses import dataclass
 
 from max.graph import TensorValue, TensorValueLike, ops
+from max.pipelines.architectures.pixtral.vision_encoder.vision_encoder import (
+    VisionEncoder,
+)
 from max.pipelines.nn.layer import Layer
-from max.pipelines.pixtral.vision_encoder.vision_encoder import VisionEncoder
 
 from .llava_decoder import Transformer
 from .llava_projector import LlavaMultiModalConnector

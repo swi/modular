@@ -18,14 +18,20 @@ def register_all_models():
     """Imports model architectures, thus registering the architecture in the shared PIPELINE_REGISTRY."""
     import max.pipelines.llama3 as llama3
     import max.pipelines.llama_vision as llama_vision
-    import max.pipelines.pixtral as pixtral
 
     from .mistral import mistral_arch
     from .mpnet import mpnet_arch
+    from .pixtral import pixtral_arch
     from .qwen2 import qwen2_arch
     from .replit import replit_arch
 
-    architectures = [replit_arch, mistral_arch, mpnet_arch, qwen2_arch]
+    architectures = [
+        mistral_arch,
+        mpnet_arch,
+        pixtral_arch,
+        qwen2_arch,
+        replit_arch,
+    ]
 
     for arch in architectures:
         PIPELINE_REGISTRY.register(arch)
