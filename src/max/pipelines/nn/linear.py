@@ -28,7 +28,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.graph.quantization import QuantizationEncoding
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import Weights
 
 from .kernels import swish_glu
@@ -166,6 +166,7 @@ class Linear(Layer):
         out_features: int,
         weights: Weights | Weight,
         bias: Optional[Weights | Weight] = None,
+        quantization_config: Optional[QuantizationConfig] = None,
     ) -> "Linear":
         """Factory method to create a Linear layer with appropriate implementation."""
         if not quantization_encoding:
@@ -186,6 +187,7 @@ class Linear(Layer):
                 out_features,
                 weights,
                 bias,
+                quantization_config,
             )
 
 
@@ -205,6 +207,7 @@ class QLinear(Linear):
         out_features: int,
         weights: Weights | Weight,
         bias: Optional[Weights | Weight],
+        quantization_config: Optional[QuantizationConfig],
     ) -> "Linear":
         if quantization_encoding != QuantizationEncoding.GPTQ:
             weight = _allocate_if_needed(
@@ -229,6 +232,7 @@ class QLinear(Linear):
                 out_features,
                 weights,
                 bias,
+                quantization_config,
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -236,6 +240,7 @@ class QLinear(Linear):
         weight = TensorValue(self.weight)
         res = ops.qmatmul(
             self.quantization_encoding,
+            None,
             x,
             weight,
         )
@@ -249,8 +254,7 @@ class GPTQLinear(QLinear):
     "A Linear layer for GPTQ encoding"
 
     # Because QLinear has optional fields, so must we, since we subclass QLinear
-    quantization_config: dict | None = None
-    desc_act: bool | None = None
+    quantization_config: QuantizationConfig | None = None
     perm_idx: Optional[TensorValueLike] | None = None
 
     @classmethod
@@ -262,22 +266,17 @@ class GPTQLinear(QLinear):
         out_features: int,
         weights: Weights | Weight,
         bias: Optional[Weights | Weight],
+        quantization_config: Optional[QuantizationConfig],
     ) -> "Linear":
         """Internal method to create a Linear layer from GPTQ weights."""
-        assert hasattr(quantization_encoding, "config"), (
-            "quantization_encoding must have config set for GPTQ encoding"
+
+        assert quantization_config, (
+            "QuantizationConfig must be provided for GPTQLinear"
         )
 
-        quantization_config: dict = quantization_encoding.config
+        assert quantization_config.sym, "GPTQ with sym=False is not supported."
 
-        assert "desc_act" in quantization_config, (
-            "'desc_act' must be set in config for GPTQ"
-        )
-        desc_act = quantization_config["desc_act"]
-
-        assert quantization_config.get("sym", False), (
-            "GPTQ with sym=False is not supported."
-        )
+        desc_act = quantization_config.desc_act
 
         perm_idx = None
 
@@ -316,7 +315,6 @@ class GPTQLinear(QLinear):
                 bias=None,
                 quantization_encoding=quantization_encoding,
                 quantization_config=quantization_config,
-                desc_act=desc_act,
                 perm_idx=perm_idx,
             )
 
@@ -338,6 +336,7 @@ class GPTQLinear(QLinear):
             perm_idx = TensorValue(self.perm_idx)
             res = ops.qmatmul(
                 self.quantization_encoding,
+                self.quantization_config,
                 ops.gather(x, perm_idx, axis=2),
                 weight,
                 perm_idx,
@@ -345,6 +344,7 @@ class GPTQLinear(QLinear):
         else:
             res = ops.qmatmul(
                 self.quantization_encoding,
+                self.quantization_config,
                 x,
                 weight,
             )

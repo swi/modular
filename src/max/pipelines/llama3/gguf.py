@@ -25,13 +25,9 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.graph.quantization import QuantizationEncoding
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import Weights
-from max.pipelines import (
-    PipelineConfig,
-    RopeType,
-    WeightsFormat,
-)
+from max.pipelines import PipelineConfig, RopeType, WeightsFormat
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
     FetchPagedKVCacheCollection,
@@ -97,6 +93,7 @@ def feed_forward(
     hidden_dim: int,
     feed_forward_length: int,
     weights: Weights,
+    quantization_config: Optional[QuantizationConfig],
 ) -> MLP:
     return MLP(
         Linear.create(
@@ -105,6 +102,7 @@ def feed_forward(
             feed_forward_length,
             hidden_dim,
             weights.ffn_gate,
+            quantization_config=quantization_config,
         ),
         Linear.create(
             dtype,
@@ -112,6 +110,7 @@ def feed_forward(
             hidden_dim,
             feed_forward_length,
             weights.ffn_down,
+            quantization_config=quantization_config,
         ),
         Linear.create(
             dtype,
@@ -119,6 +118,7 @@ def feed_forward(
             feed_forward_length,
             hidden_dim,
             weights.ffn_up,
+            quantization_config=quantization_config,
         ),
     )
 
@@ -318,6 +318,7 @@ def _attention_opaque(
             pipeline_config.huggingface_config.hidden_size,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_output,
+            quantization_config=pipeline_config._quant_config,
         ),
         rope=rope,
         layer_idx=layer_idx,
@@ -520,6 +521,7 @@ def _transformer_opaque(
                     pipeline_config.huggingface_config.hidden_size,
                     pipeline_config.huggingface_config.intermediate_size,
                     weights.blk[i],
+                    pipeline_config._quant_config,
                 ),
                 attention_norm=rms_norm(
                     pipeline_config.huggingface_config.hidden_size,
@@ -551,6 +553,7 @@ def _transformer_opaque(
                 pipeline_config.huggingface_config.vocab_size,
                 pipeline_config.huggingface_config.hidden_size,
                 weights.output,
+                quantization_config=pipeline_config._quant_config,
             )
         else:
             output = Linear.create(
@@ -598,6 +601,7 @@ def attention(
             kv_weight_dim,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_k,
+            quantization_config=pipeline_config._quant_config,
         ),
         wv=Linear.create(
             pipeline_config.dtype,
@@ -605,6 +609,7 @@ def attention(
             kv_weight_dim,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_v,
+            quantization_config=pipeline_config._quant_config,
         ),
         wq=Linear.create(
             pipeline_config.dtype,
@@ -612,6 +617,7 @@ def attention(
             pipeline_config.huggingface_config.hidden_size,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_q,
+            quantization_config=pipeline_config._quant_config,
         ),
         wo=Linear.create(
             pipeline_config.dtype,
@@ -619,6 +625,7 @@ def attention(
             pipeline_config.huggingface_config.hidden_size,
             pipeline_config.huggingface_config.hidden_size,
             weights.attn_output,
+            quantization_config=pipeline_config._quant_config,
         ),
         rope=rope,
     )
@@ -674,6 +681,7 @@ def transformer(
                     pipeline_config.huggingface_config.hidden_size,
                     pipeline_config.huggingface_config.intermediate_size,
                     weights.blk[i],
+                    pipeline_config._quant_config,
                 ),
                 attention_norm=rms_norm(
                     pipeline_config.huggingface_config.hidden_size,
@@ -705,6 +713,7 @@ def transformer(
                 pipeline_config.huggingface_config.vocab_size,
                 pipeline_config.huggingface_config.hidden_size,
                 weights.output,
+                quantization_config=pipeline_config._quant_config,
             )
         else:
             output = Linear.create(

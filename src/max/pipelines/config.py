@@ -40,7 +40,7 @@ from huggingface_hub import (
 from huggingface_hub.hf_api import ModelInfo
 from max.driver import CPU, Accelerator, Device, DeviceSpec, accelerator_count
 from max.dtype import DType
-from max.graph.quantization import QuantizationEncoding
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import (
     GGUFWeights,
     SafetensorWeights,
@@ -607,6 +607,9 @@ class PipelineConfig:
     _available_cache_memory: Optional[int] = None
     """The amount of available cache memory in bytes. This should only be set by internal code."""
 
+    _quant_config: Optional[QuantizationConfig] = None
+    """Optional config for specifying quantization parameters. This should only be set by internal code."""
+
     max_cache_batch_size: Optional[int] = None
     """DEPRECATED: The maximum cache batch size to use for the model. Use max_batch_size instead."""
 
@@ -683,8 +686,13 @@ class PipelineConfig:
         self.weight_path = weight_paths
 
         if self.quantization_encoding == SupportedEncoding.gptq:
-            self.quantization_encoding.quantization_encoding.config = (  # type: ignore[union-attr]
-                self.huggingface_config.quantization_config
+            hf_quant_config = self.huggingface_config.quantization_config
+            self._quant_config = QuantizationConfig(
+                quant_method=hf_quant_config["quant_method"],
+                bits=hf_quant_config["bits"],
+                group_size=hf_quant_config["group_size"],
+                desc_act=hf_quant_config["desc_act"],
+                sym=hf_quant_config["sym"],
             )
 
         if self.max_num_steps > 1 and self.enable_structured_output:
