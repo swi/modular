@@ -12,10 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 """Build a Qwen2 model via Graph API from GGUF weights."""
 
-from typing import List, Union
+from typing import List, Union, cast
 
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorValue,
+    TensorValueLike,
+    Weight,
+    ops,
+)
 from max.graph.weights import Weights
 from max.pipelines import PipelineConfig, RopeType, WeightsFormat
 from max.pipelines.kv_cache import (
@@ -251,12 +258,24 @@ def transformer(
             weights.model.embed_tokens,
         )
 
-        output = linear(
-            pipeline_config.dtype,
-            pipeline_config.huggingface_config.vocab_size,
-            pipeline_config.huggingface_config.hidden_size,
-            weights.lm_head,
-        )
+        # Some model variants lack dedicated weights for a final linear
+        # layer, and share the embedding layer.
+        if weights.lm_head.weight.exists():
+            output = Linear.create(
+                pipeline_config.dtype,
+                pipeline_config.graph_quantization_encoding,
+                pipeline_config.huggingface_config.vocab_size,
+                pipeline_config.huggingface_config.hidden_size,
+                weights.lm_head,
+            )
+        else:
+            output = Linear.create(
+                pipeline_config.dtype,
+                pipeline_config.graph_quantization_encoding,
+                pipeline_config.huggingface_config.vocab_size,
+                pipeline_config.huggingface_config.hidden_size,
+                cast(Weight, embedding_layer.weights),
+            )
 
         kv_collection: Union[
             FetchContinuousBatchingKVCacheCollection,
