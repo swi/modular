@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from typing import (
     Any,
     Generic,
+    List,
     Literal,
     Optional,
     Protocol,
@@ -158,6 +159,10 @@ class TokenGeneratorRequest:
     If set to True, the response will include the original prompt along with the
     generated output. This can be useful for debugging or when you want to see how
     the input relates to the output.
+    """
+    stop: Optional[Union[str, List[str]]] = None
+    """
+    Optional list of stop expressions (see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
     """
 
     def __str__(self) -> str:
