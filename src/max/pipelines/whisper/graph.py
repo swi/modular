@@ -11,24 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import numpy as np
 from max.dtype import DType
-from max.graph import ops
+from max.graph import Graph, TensorType, ops
 from max.graph.weights import SafetensorWeights
 from max.pipelines import PipelineConfig
-from max.pipelines.kv_cache import (
-    FetchContinuousBatchingKVCacheCollection,
-    KVCacheParams,
-)
 from max.pipelines.nn import (
     Conv1D,
     Embedding,
     Linear,
     LPLayerNorm,
     Sequential,
-    TransformerBlock,
 )
 
-from .encoder import WhisperEncoder
+from .encoder import WhisperEncoder, WhisperEncoderLayer, WhisperSdpaAttention
 
 
 def conv1d(
@@ -137,7 +133,6 @@ def feed_forward(
 def attention(
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
-    kv_params: KVCacheParams,
     layer_index: int,
 ):
     wq = weights.self_attn.q_proj.weight.allocate(
@@ -161,26 +156,45 @@ def attention(
             pipeline_config.huggingface_config.d_model,
         ],
     )
-    wqkv = ops.concat((wq, wk, wv))
 
-    # TODO: v_proj, q_proj, and out_proj attention projections have biases.
-    b_v = weights.self_attn.v_proj.bias.allocate(
+    bias_q = weights.self_attn.q_proj.bias.allocate(
         pipeline_config.dtype, [pipeline_config.huggingface_config.d_model]
     )
-    b_q = weights.self_attn.q_proj.bias.allocate(
+    bias_v = weights.self_attn.v_proj.bias.allocate(
         pipeline_config.dtype, [pipeline_config.huggingface_config.d_model]
     )
-    b_o = weights.self_attn.out_proj.bias.allocate(
-        pipeline_config.dtype, [pipeline_config.huggingface_config.d_model]
+    bias_k = ops.constant(
+        np.zeros(pipeline_config.huggingface_config.d_model),
+        pipeline_config.dtype,
     )
 
-    # TODO: Implement AttentionWithoutMask with Bias and use it here.
+    wo = weights.attn_output.weight.allocate(
+        pipeline_config.dtype,
+        [
+            pipeline_config.huggingface_config.d_model,
+            pipeline_config.huggingface_config.d_model,
+        ],
+    )
+    bias_o = weights.self_attn.out_proj.bias.allocate(
+        pipeline_config.dtype, [pipeline_config.huggingface_config.d_model]
+    )
+    return WhisperSdpaAttention(
+        n_heads=pipeline_config.huggingface_config.n_heads,
+        head_dim=pipeline_config.huggingface_config.d_model
+        // pipeline_config.huggingface_config.encoder_attention_heads,
+        wq=Linear(wq, bias=bias_q),
+        wk=Linear(wk, bias=bias_k),
+        wv=Linear(wv, bias=bias_v),
+        wo=Linear(
+            wo,
+            bias=bias_o,
+        ),
+    )
 
 
 def encoder(
     pipeline_config: PipelineConfig,
     weights: SafetensorWeights,
-    kv_params: KVCacheParams,
 ) -> WhisperEncoder:
     conv1 = conv1d(
         dtype=pipeline_config.dtype,
@@ -213,11 +227,10 @@ def encoder(
     # EncoderBlocks
     # TODO: Which cache strategy to use? Will both Continuous and paged will work?
     layers = [
-        TransformerBlock(
+        WhisperEncoderLayer(
             attention=attention(
                 pipeline_config,
                 weights.language_model.model.layers[i],
-                kv_params,
                 layer_idx=ops.constant(i, DType.uint32),  # type: ignore
             ),
             mlp=feed_forward(
@@ -253,9 +266,31 @@ def encoder(
         embed_positions=embed_positions,
         layers=layers,
         norm=norm,
-        kv_params=kv_params,
-        kv_collection_constructor=FetchContinuousBatchingKVCacheCollection(
-            kv_params
-        ),
         all_logits=False,
     )
+
+
+def build_graph(
+    pipeline_config: PipelineConfig,
+    weights: SafetensorWeights,
+) -> Graph:
+    # Audio input_features.
+    input_features_type = TensorType(
+        DType.float32,
+        shape=["batch_size", "num_mel_bins", "sequence_length"],
+    )
+
+    # Initialize Graph.
+    with Graph(
+        "whisper_audio_encoder",
+        input_types=[
+            input_features_type,
+        ],
+    ) as graph:
+        model = encoder(pipeline_config, weights)
+        input_features = graph.inputs[0]
+        outputs = model(
+            input_features=input_features.tensor,
+        )
+        graph.output(*outputs)
+        return graph
