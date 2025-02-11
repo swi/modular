@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional, Union
+from typing import List, Optional, Union, cast
 
 from max.dtype import DType
 from max.graph import (
@@ -22,6 +22,7 @@ from max.graph import (
     Graph,
     TensorValue,
     TensorValueLike,
+    Weight,
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
@@ -552,7 +553,13 @@ def _transformer_opaque(
                 weights.output,
             )
         else:
-            output = Linear(embedding_layer.weights)
+            output = Linear.create(
+                pipeline_config.dtype,
+                pipeline_config.graph_quantization_encoding,
+                pipeline_config.huggingface_config.vocab_size,
+                pipeline_config.huggingface_config.hidden_size,
+                cast(Weight, embedding_layer.weights),
+            )
 
         return Transformer(
             dim=pipeline_config.huggingface_config.hidden_size,
@@ -700,7 +707,13 @@ def transformer(
                 weights.output,
             )
         else:
-            output = Linear(embedding_layer.weights)
+            output = Linear.create(
+                pipeline_config.dtype,
+                pipeline_config.graph_quantization_encoding,
+                pipeline_config.huggingface_config.vocab_size,
+                pipeline_config.huggingface_config.hidden_size,
+                cast(Weight, embedding_layer.weights),
+            )
 
         return NaiveTransformer(
             dim=pipeline_config.huggingface_config.hidden_size,
