@@ -14,6 +14,8 @@
 
 """Utilities for working with Config objects in Click."""
 
+from __future__ import annotations
+
 import functools
 import inspect
 import pathlib
@@ -23,7 +25,7 @@ from pathlib import Path
 from typing import Any, Union, get_args, get_origin, get_type_hints
 
 import click
-from max.driver import DeviceSpec, accelerator_count
+from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 
 from .device_options import DevicesOptionType
@@ -185,56 +187,16 @@ def pipeline_config_options(func):
     )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        kwargs["device_specs"] = []
+        # Remove the options from kwargs and replace with unified device_specs.
+        devices: str | list[int] = kwargs.pop("devices")
+        legacy_use_gpu = kwargs.pop("use_gpu", None)
 
-        # If the user is explicitly requesting cpu, set the device spec to cpu, or
-        # else we always default to the first available GPU or the list of GPUs
-        # requested by the user.
-        if kwargs["devices"] == "cpu":
-            kwargs["device_specs"].append(DeviceSpec.cpu())
-        else:
-            gpu_devices_requested_set = set()
+        # Apply legacy flag if no modern devices specified.
+        if not devices and legacy_use_gpu:
+            devices = legacy_use_gpu
 
-            # We check for --devices first. --use-gpu is kept for backwards compatibility.
-            # If users pass in both, we only consider values from the --devices flag.
-            if kwargs["devices"] == "gpu":
-                gpu_devices_requested_set.add(0)
-            elif (
-                isinstance(kwargs["devices"], list)
-                and len(kwargs["devices"]) > 0
-            ):
-                gpu_devices_requested_set.update(set(kwargs["devices"]))
-            elif kwargs["use_gpu"] is not None:
-                gpu_devices_requested_set.update(set(kwargs["use_gpu"]))
+        kwargs["device_specs"] = DevicesOptionType.device_specs(devices)
 
-            gpu_devices_requested = list(gpu_devices_requested_set)
-            num_devices_available = accelerator_count()
-
-            # If no devices are available and no devices are requested, default to cpu.
-            if num_devices_available == 0 and len(gpu_devices_requested) == 0:
-                kwargs["device_specs"].append(DeviceSpec.cpu())
-            else:
-                # If no devices are requested, default to the first available GPU.
-                gpu_devices_requested = (
-                    [0]
-                    if len(gpu_devices_requested) == 0
-                    else gpu_devices_requested
-                )
-                for gpu_id in gpu_devices_requested:
-                    if gpu_id >= num_devices_available:
-                        msg = f"GPU {gpu_id} was requested but "
-                        if num_devices_available == 0:
-                            msg += "no GPU devices were found."
-                        else:
-                            msg += f"only found {num_devices_available} GPU devices."
-                        msg += "Please provide valid GPU ID(s) or set --devices=cpu."
-                        raise ValueError(msg)
-                    kwargs["device_specs"].append(
-                        DeviceSpec.accelerator(id=gpu_id)
-                    )
-
-        del kwargs["use_gpu"]
-        del kwargs["devices"]
         return func(*args, **kwargs)
 
     return wrapper
