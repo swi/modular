@@ -162,6 +162,15 @@ class TextContext:
     ) -> None:
         """Updates the next_tokens and extends existing tokens to include all generated tokens."""
 
+        # We can't append the new token to our sequence if we had only
+        # encoded part of our prompt.
+        # This is mostly for chunked prefill.
+        if self.active_idx < self.current_length:
+            self.start_idx = self.active_idx
+            self.active_idx = self.current_length
+            self.active_length = self.active_idx - self.start_idx
+            return
+
         if self.active_idx >= self.size:
             self.size += CHUNK_SIZE
             if self.tokens.flags.owndata:
