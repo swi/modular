@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
-from typing import Tuple, Union
+from typing import Optional, Tuple, Union
 
 from max.graph import TensorValue, TensorValueLike, Weight, ops
 
@@ -26,12 +26,12 @@ class Conv2D(Layer):
     """
 
     filter: TensorValueLike
+    bias: Optional[TensorValueLike] = None
 
     stride: Union[int, Tuple[int, int]] = (1, 1)
     padding: Union[int, Tuple[int, int, int, int]] = (0, 0, 0, 0)
     dilation: Union[int, Tuple[int, int]] = (1, 1)
     groups: int = 1
-    bias: bool = False
 
     def __call__(self, x: TensorValue) -> TensorValue:
         # These need to be casted as the underlying ops.conv2d call
@@ -62,6 +62,7 @@ class Conv2D(Layer):
             self.dilation,
             self.padding,
             self.groups,
+            self.bias,
         )
 
 
@@ -72,12 +73,12 @@ class Conv1D(Layer):
     """
 
     filter: TensorValueLike  # [kernel_size, in_channels, out_channels]
+    bias: Optional[TensorValueLike] = None
 
     stride: int = 1
     padding: int = 0
     dilation: int = 1
     groups: int = 1
-    bias: bool = False
 
     def __call__(self, x: TensorValueLike) -> TensorValue:
         """
@@ -106,6 +107,7 @@ class Conv1D(Layer):
                 (1, self.dilation),
                 (0, 0, self.padding, self.padding),
                 self.groups,
+                self.bias,
             )
         # Reshape [batch_size, height=1, new_length, out_channels] to [batch_size, new_length, out_channels].
         return ops.squeeze(output, 1)

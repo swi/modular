@@ -526,7 +526,7 @@ def instantiate_vision_model(
         ),
         stride=patch_size,
         padding=(0, 0, 0, 0),
-        bias=False,
+        bias=None,
     )
 
     class_embedding = weights.vision_model.class_embedding.allocate(
