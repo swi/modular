@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import heapq
-import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 import numpy as np
@@ -20,6 +18,9 @@ import numpy as np
 TokenId = Any
 BlockId = Any
 SeqId = int
+
+
+from collections import OrderedDict
 
 
 def _token_prefix_match_len(
@@ -56,8 +57,14 @@ class TrieNode:
       for a given token. I.e: the page index
     """
 
+    node_id_counter = 0
+
     def __init__(self) -> None:
         """Constructs a TrieNode."""
+        # each node is assigned a unique id to look it up in the lru cache
+        self.node_id = TrieNode.node_id_counter
+        TrieNode.node_id_counter += 1
+
         self.children: Dict[tuple[TokenId, ...], TrieNode] = {}
         # Typically in a map, we would have keys mapping to values.
         # To avoid collision with KV cache terminology, we call them tokens and blocks.
@@ -70,12 +77,35 @@ class TrieNode:
         # Sequences that are using the blocks owned by this trie node
         # The node can only be evicted if self.active_seqs is empty
         self.active_seqs: Set[SeqId] = set()
-        # Last access time is used to determine which nodes to evict first
-        self.last_access_time: float = time.time()
 
-    def __lt__(self, other):
-        """Comparison function for use by heapq"""
-        return self.last_access_time < other.last_access_time
+    def is_leaf(self) -> bool:
+        """Returns true if the node is a leaf node."""
+        return len(self.children) == 0
+
+    def is_root(self) -> bool:
+        """Returns true if the node is the root node."""
+        return self.parent is None
+
+    def is_evictable(self) -> bool:
+        """Returns true if the node is evictable."""
+        return not self.is_root() and len(self.active_seqs) == 0
+
+
+class LRUCache(OrderedDict):
+    """Least recently used block cache to support O(1) eviction operations."""
+
+    def __init__(self):
+        super().__init__()
+
+    def __setitem__(self, key: int, value: TrieNode) -> None:
+        super().__setitem__(key, value)
+        super().move_to_end(key)
+
+    def move_to_front(self, key: int) -> None:
+        super().move_to_end(key, last=False)
+
+    def pop_front(self) -> TrieNode:
+        return super().popitem(last=False)[-1]
 
 
 class RadixTrie:
@@ -105,6 +135,9 @@ class RadixTrie:
         self.page_size = page_size
         self.evictable_blocks: set[BlockId] = set()
         self.all_blocks: set[BlockId] = set()
+
+        # the lru cache contains each evictable block in the trie
+        self.lru_cache = LRUCache()
 
     def _check_node_valid(self, node: TrieNode):
         """Rudimentary checks of data structure invariants for TrieNode."""
@@ -157,7 +190,9 @@ class RadixTrie:
                 curr.tokens = tokens
                 curr.blocks = blocks
                 prev.children[key] = curr
+                assert curr.is_evictable() and curr.is_leaf()
                 self.evictable_blocks.update(blocks)
+                self.lru_cache[curr.node_id] = curr
                 self.all_blocks.update(blocks)
 
             curr = prev.children[key]
@@ -213,8 +248,7 @@ class RadixTrie:
         Return:
             Tuple containing:
                 - trie_node: Node corresponding to end of matched prefix where
-                             future generated tokens can be inserted. This is
-                             a leaf node.
+                             future generated tokens can be inserted.
                 - block_list: KV cache blocks for matched prefix
         """
         if isinstance(tokens, list):
@@ -256,8 +290,8 @@ class RadixTrie:
         blocks: List[BlockId] = []
         if node is None:
             node = self.root
-        leaf_node = match_prefix_helper(node, tokens, blocks)
-        return leaf_node, blocks
+        curr = match_prefix_helper(node, tokens, blocks)
+        return curr, blocks
 
     def _split_node(
         self, node: TrieNode, split_len: int
@@ -298,10 +332,12 @@ class RadixTrie:
         parent.parent.children[parent_key] = parent
         child_key = _token_to_key(child.tokens, self.page_size)
         parent.children = {child_key: child}
+        self.lru_cache[child.node_id] = child
         child.parent = parent
 
-        parent.last_access_time = child.last_access_time
         parent.active_seqs = child.active_seqs.copy()
+        if parent.is_evictable():
+            self.lru_cache[parent.node_id] = parent
 
         self._check_node_valid(parent)
         self._check_node_valid(child)
@@ -318,9 +354,11 @@ class RadixTrie:
             # assume that it is already marked for its parents as well
             if seq_id in curr.active_seqs:
                 break
-            if not curr.active_seqs:
-                self.evictable_blocks -= set(curr.blocks)
             curr.active_seqs.add(seq_id)
+            if not curr.is_evictable():
+                self.evictable_blocks -= set(curr.blocks)
+                if curr.node_id in self.lru_cache:
+                    del self.lru_cache[curr.node_id]
             assert curr.parent is not None
             curr = curr.parent
 
@@ -333,75 +371,50 @@ class RadixTrie:
         while curr != self.root:
             assert curr is not None
             assert seq_id in curr.active_seqs
-            curr.last_access_time = time.time()
             curr.active_seqs.remove(seq_id)
-            if not curr.active_seqs:
+            if curr.is_evictable():
                 self.evictable_blocks.update(curr.blocks)
+                self.lru_cache[curr.node_id] = curr
             assert curr.parent is not None
             curr = curr.parent
 
     def evict_blocks(self, desired_num_evicted: int) -> List[BlockId]:
         """Attempt to evict at most `desired_num_evicted` blocks from trie."""
-
-        def collect_leaves() -> List[TrieNode]:
-            leaves: List[TrieNode] = []
-            stack: List[TrieNode] = [self.root]
-
-            while stack:
-                curr = stack.pop()
-                if len(curr.children) == 0:
-                    leaves.append(curr)
-                else:
-                    stack.extend(curr.children.values())
-            return leaves
-
-        leaves = collect_leaves()
-        heapq.heapify(leaves)
-
         evicted_blocks: List[BlockId] = []
 
-        while len(evicted_blocks) < desired_num_evicted and len(leaves) > 0:
-            leaf = heapq.heappop(leaves)
-
-            # don't evict the root
-            if leaf == self.root:
-                break
-            # don't evict node if in use by any seq
-            if len(leaf.active_seqs) > 0:
-                continue
-
-            remaining_blocks_to_evict = desired_num_evicted - len(
-                evicted_blocks
-            )
-            blocks_to_evict_from_leaf = min(
-                remaining_blocks_to_evict, len(leaf.blocks)
-            )
-            assert blocks_to_evict_from_leaf > 0
-
-            # evict up to `left_to_evict` blocks from the leaf
-            evicted_blocks.extend(leaf.blocks[-blocks_to_evict_from_leaf:])
+        while len(evicted_blocks) < desired_num_evicted and self.lru_cache:
+            leaf = self.lru_cache.pop_front()
+            # we guarantee that the parent node will only be evicted after all
+            # its children have been evicted. as such, this node we will evict
+            # is a leaf
+            assert leaf.is_evictable() and leaf.is_leaf()
             key = _token_to_key(leaf.tokens, self.page_size)
-            leaf.tokens = leaf.tokens[
-                : -(blocks_to_evict_from_leaf * self.page_size)
-            ]
-            leaf.blocks = leaf.blocks[:-blocks_to_evict_from_leaf]
-
-            assert len(leaf.tokens) % self.page_size == 0
-            assert len(leaf.tokens) // self.page_size == len(leaf.blocks)
-
-            if len(leaf.tokens) == 0:
-                # delete leaf node
-                assert leaf.parent is not None
-                del leaf.parent.children[key]
-
-                # parent of leaf is now potentially a leaf
-                if len(leaf.parent.children) == 0:
-                    heapq.heappush(leaves, leaf.parent)
+            num_blocks_to_evict = min(
+                desired_num_evicted - len(evicted_blocks),
+                len(leaf.blocks),
+            )
+            assert num_blocks_to_evict > 0
+            num_tokens_to_evict = num_blocks_to_evict * self.page_size
+            blocks_left, blocks_to_evict = (
+                leaf.blocks[:-num_blocks_to_evict],
+                leaf.blocks[-num_blocks_to_evict:],
+            )
+            leaf.blocks = blocks_left
+            leaf.tokens = leaf.tokens[:-num_tokens_to_evict]
+            evicted_blocks.extend(blocks_to_evict)
+            if leaf.blocks:
+                self.lru_cache[leaf.node_id] = leaf
+                self.lru_cache.move_to_front(leaf.node_id)
+            else:
+                parent = leaf.parent
+                assert parent is not None
+                del parent.children[key]
 
         self.evictable_blocks.difference_update(evicted_blocks)
         self.all_blocks.difference_update(evicted_blocks)
         if len(evicted_blocks) < desired_num_evicted:
             assert not self.evictable_blocks
+            assert len(self.lru_cache) == 0
 
         return evicted_blocks
 
