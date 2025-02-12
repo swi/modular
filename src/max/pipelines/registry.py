@@ -880,6 +880,15 @@ class PipelineRegistry:
 
         return message
 
+    def _set_hf_pipeline_defaults(
+        self, pipeline_config: PipelineConfig
+    ) -> PipelineConfig:
+        if pipeline_config.max_batch_size is None:
+            pipeline_config.max_batch_size = 1
+        # HF pipelines always use custom continuous cache
+        pipeline_config.cache_strategy = KVCacheStrategy.CONTINUOUS
+        return pipeline_config
+
     def retrieve_factory(
         self,
         pipeline_config: PipelineConfig,
@@ -950,6 +959,7 @@ class PipelineRegistry:
                 eos_token_id=tokenizer.eos,
             )
         else:
+            pipeline_config = self._set_hf_pipeline_defaults(pipeline_config)
             hf_pipeline_class = _HF_PIPELINE_TASK_MAP[task]
 
             torch_device_type = str(pipeline_config.device_specs[0].device_type)
