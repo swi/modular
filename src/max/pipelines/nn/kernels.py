@@ -20,6 +20,7 @@ from enum import Enum
 import numpy as np
 from max.dtype import DType
 from max.graph import Dim, TensorType, TensorValue, TensorValueLike, ops
+from max.graph.quantization import QuantizationConfig
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     KVCacheParams,
@@ -115,6 +116,117 @@ def fused_qkv_ragged_matmul(
     return ops.inplace_custom(
         op_name,
         values=[input, input_row_offsets, wqkv, kv_collection, layer_idx],
+        out_types=[
+            TensorType(
+                dtype=input.dtype,
+                shape=input.shape[:-1] + [n_heads * kv_params.head_dim],
+                device=input.device,
+            )
+        ],
+        parameters=parameters,
+    )[0].tensor
+
+
+def fused_qkv_ragged_matmul_quantized(
+    kv_params: KVCacheParams,
+    input: TensorValue,
+    input_row_offsets: TensorValue,
+    wqkv: TensorValue,
+    kv_collection: ContinuousBatchingKVCacheCollection | PagedKVCacheCollection,
+    layer_idx: TensorValue,
+    n_heads: int,
+    quantization_config: QuantizationConfig,
+    perm_idx: TensorValue | None = None,
+    bias: TensorValue | None = None,
+) -> TensorValue:
+    """Computes fused query, key, and value projections with ragged input and
+    quantized weight matrices. A `quantization_config` must be provided.
+
+    `input` and `input_row_offsets` are used together to implement the ragged
+    tensor.
+    `input_row_offsets` indicates where each batch starts and ends in `input`
+
+    Raises:
+        ValueError: on input shapes/dtypes that are invalid for the kernel.
+    """
+
+    input_rank_expected = 2
+    if input.rank != input_rank_expected:
+        msg = f"expected input to have rank {input_rank_expected}, was {input.rank}"
+        raise ValueError(msg)
+
+    if input_row_offsets.dtype != DType.uint32:
+        msg = (
+            "expected input_row_offsets to have dtype uint32, was"
+            f" {input_row_offsets.dtype}"
+        )
+        raise ValueError(msg)
+
+    if layer_idx.dtype != DType.uint32:
+        msg = f"expected layer_idx to have dtype uint32, was {layer_idx.dtype}"
+        raise ValueError(msg)
+
+    if kv_params.cache_strategy not in {
+        KVCacheStrategy.CONTINUOUS,
+        KVCacheStrategy.PAGED,
+    }:
+        msg = f"unsupported cache strategy for fused_qkv_ragged_matmul: {kv_params.cache_strategy}"
+        raise ValueError(msg)
+
+    # In the group-wise quantization scheme, every `group_size` quantized weights
+    # share the same scale. If `has_zp` is `True`, there is also a group-wise zero
+    # point that need to be substracted from the quantized weights.
+    # Since the new extensibility API doesn't currently support `bool` type parameters,
+    # we pass `has_zp` as an interger (`has_zp_int`).
+    # For GPTQ, `has_zp_int` will always be 0.
+    parameters: dict[str, int | str | DType] = {
+        "num_heads": kv_params.n_kv_heads_per_device,
+        "head_dim": kv_params.head_dim,
+        "group_size": quantization_config.group_size,
+        "has_zp_int": 0,
+    }
+    if perm_idx:
+        input = ops.gather(input, TensorValue(perm_idx), axis=1)
+        wqkv = ops.custom(
+            "GPTQ_gpu_repack_b4_g128_desc_act",
+            list((wqkv, perm_idx)),
+            out_types=[
+                TensorType(
+                    DType.uint8,
+                    ((wqkv.shape[1], wqkv.shape[0])),
+                )
+            ],
+        )[0].tensor
+    else:
+        wqkv = ops.custom(
+            "GPTQ_gpu_repack_b4_g128",
+            list((wqkv,)),
+            out_types=[
+                TensorType(
+                    DType.uint8,
+                    ((wqkv.shape[1], wqkv.shape[0])),
+                )
+            ],
+        )[0].tensor
+
+    if kv_params.cache_strategy == KVCacheStrategy.PAGED:
+        assert kv_params.page_size is not None
+        parameters["page_size"] = int(kv_params.page_size)
+
+    cache_strategy_str = kv_params.cache_strategy.kernel_substring()
+
+    args = [input, input_row_offsets, wqkv, kv_collection, layer_idx]
+    if bias:
+        args.append(bias)
+        bias_name_str = "bias."
+    else:
+        bias_name_str = ""
+
+    op_name = f"mo.fused_qkv_matmul.ragged.{cache_strategy_str}.{bias_name_str}quantized"
+
+    return ops.inplace_custom(
+        op_name,
+        values=args,
         out_types=[
             TensorType(
                 dtype=input.dtype,

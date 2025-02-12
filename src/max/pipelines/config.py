@@ -139,7 +139,7 @@ _SUPPORTED_ENCODING_TO_CACHE_DTYPE = {
     SupportedEncoding.q4_k: DType.float32,
     SupportedEncoding.q4_0: DType.float32,
     SupportedEncoding.q6_k: DType.float32,
-    SupportedEncoding.gptq: DType.float32,
+    SupportedEncoding.gptq: DType.bfloat16,
 }
 
 _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING = {

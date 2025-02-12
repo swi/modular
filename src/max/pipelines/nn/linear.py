@@ -337,7 +337,7 @@ class GPTQLinear(QLinear):
             res = ops.qmatmul(
                 self.quantization_encoding,
                 self.quantization_config,
-                ops.gather(x, perm_idx, axis=2),
+                ops.gather(x, perm_idx, axis=(x.rank - 1)),
                 weight,
                 perm_idx,
             )

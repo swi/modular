@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from typing import List, Optional, Union, cast
 
+import numpy as np
 from max.dtype import DType
 from max.graph import (
     DeviceRef,
@@ -26,7 +27,7 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
-from max.graph.weights import Weights
+from max.graph.weights import SafetensorWeights, Weights
 from max.pipelines import PipelineConfig, RopeType, WeightsFormat
 from max.pipelines.kv_cache import (
     FetchContinuousBatchingKVCacheCollection,
@@ -282,6 +283,17 @@ def _attention_opaque(
     weights: Weights,
     layer_idx: TensorValue,
 ) -> AttentionWithRope:
+    if pipeline_config.quantization_encoding == "gptq":
+        assert isinstance(weights, SafetensorWeights), (
+            "Only support loading GPTQ weights from safetensor."
+        )
+        return quantized_attention_opaque(
+            kv_params,
+            pipeline_config,
+            rope,
+            weights,
+            layer_idx,
+        )
     kv_weight_dim = (
         pipeline_config.huggingface_config.hidden_size
         // pipeline_config.huggingface_config.num_attention_heads
@@ -343,6 +355,82 @@ def _kv_collection_constructor(
 
     msg = f"Unsupported caching strategy {kv_params.cache_strategy}"
     raise ValueError(msg)
+
+
+def quantized_attention_opaque(
+    kv_params: KVCacheParams,
+    pipeline_config: PipelineConfig,
+    rope: OptimizedRotaryEmbedding,
+    weights: SafetensorWeights,
+    layer_idx: TensorValue,
+) -> AttentionWithRope:
+    kv_weight_dim = (
+        pipeline_config.huggingface_config.hidden_size
+        // pipeline_config.huggingface_config.num_attention_heads
+    ) * pipeline_config.huggingface_config.num_key_value_heads
+
+    hidden_size = pipeline_config.huggingface_config.hidden_size
+
+    # fmt: off
+
+    # the `qweight` tensor for a QuantLinear is of type uint32. When allocated as bytes, we reshape the
+    # uint8 tensor to [cols, rows * 4] so concatenating the uint8 tensors along axis=1 is equivalent to
+    # concatenating the original uint32 tensors along axis=1.
+    wq_qweight = ops.reshape(weights.attn_q.qweight.allocate_as_bytes(), (-1, hidden_size * 4))
+    wk_qweight = ops.reshape(weights.attn_k.qweight.allocate_as_bytes(), (-1, kv_weight_dim * 4))
+    wv_qweight = ops.reshape(weights.attn_v.qweight.allocate_as_bytes(), (-1, kv_weight_dim * 4))
+
+    wqkv_qweight = ops.reshape(
+        ops.concat((wq_qweight, wk_qweight, wv_qweight), axis=1),
+        (-1, hidden_size + 2 * kv_weight_dim),
+    )
+
+    # `scales` tensor is in f16/bf16 type, so we reshape the uint8 tensor to [cols, rows * 2].
+    wq_scales = ops.reshape(weights.attn_q.scales.allocate_as_bytes(), (-1, hidden_size * 2))
+    wk_scales = ops.reshape(weights.attn_k.scales.allocate_as_bytes(), (-1, kv_weight_dim * 2))
+    wv_scales = ops.reshape(weights.attn_v.scales.allocate_as_bytes(), (-1, kv_weight_dim * 2))
+
+    wqkv_scales = ops.reshape(
+        ops.concat((wq_scales, wk_scales, wv_scales), axis=1),
+        (-1, hidden_size + 2 * kv_weight_dim),
+    )
+    # fmt: on
+
+    wqkv = ops.concat((wqkv_qweight, wqkv_scales))
+
+    assert pipeline_config._quant_config, (
+        "Missing `_quant_config` in `PipelineConfig`"
+    )
+    quant_config = pipeline_config._quant_config
+
+    perm_idx = None
+    if quant_config.desc_act:
+        perm_idx = weights.attn_q.g_idx.allocate(
+            DType.int32,
+            [hidden_size],
+        )
+        # hack: argsort the perm_idx array
+        weights._allocated[perm_idx.name] = np.argsort(
+            weights._allocated[perm_idx.name]
+        ).astype(np.int32)
+
+    return AttentionWithRope(
+        n_heads=pipeline_config.huggingface_config.num_attention_heads,
+        kv_params=kv_params,
+        wqkv=wqkv,
+        wo=Linear.create(
+            pipeline_config.dtype,
+            pipeline_config.graph_quantization_encoding,
+            pipeline_config.huggingface_config.hidden_size,
+            pipeline_config.huggingface_config.hidden_size,
+            weights.attn_output,
+            quantization_config=quant_config,
+        ),
+        rope=rope,
+        layer_idx=layer_idx,
+        perm_idx=perm_idx,
+        quantization_config=quant_config,
+    )
 
 
 def distributed_transformer_opaque(

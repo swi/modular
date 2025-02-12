@@ -19,6 +19,7 @@ from typing import List, Optional, Union
 
 from max.dtype import DType
 from max.graph import BufferValue, DeviceRef, TensorValue, ops
+from max.graph.quantization import QuantizationConfig
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
     PagedKVCacheCollection,
@@ -29,6 +30,7 @@ from ..kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
     fused_qkv_ragged_matmul,
+    fused_qkv_ragged_matmul_quantized,
 )
 from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
@@ -46,6 +48,8 @@ class AttentionWithRope(AttentionImpl):
 
     rope: OptimizedRotaryEmbedding
     bias: Optional[TensorValue] = None
+    perm_idx: Optional[TensorValue] = None
+    quantization_config: Optional[QuantizationConfig] = None
 
     def __call__(
         self,
@@ -59,16 +63,30 @@ class AttentionWithRope(AttentionImpl):
         total_seq_len = x.shape[0]
 
         # Call into fused qkv ragged matmul.
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x,
-            wqkv=self.wqkv,
-            input_row_offsets=kwargs["input_row_offsets"],
-            kv_collection=kv_collection,
-            layer_idx=self.layer_idx,
-            n_heads=self.n_heads,
-            bias=self.bias,
-        )
+        if self.quantization_config:
+            xq = fused_qkv_ragged_matmul_quantized(
+                self.kv_params,
+                input=x,
+                wqkv=self.wqkv,
+                input_row_offsets=kwargs["input_row_offsets"],
+                kv_collection=kv_collection,
+                layer_idx=self.layer_idx,
+                n_heads=self.n_heads,
+                bias=self.bias,
+                perm_idx=self.perm_idx,
+                quantization_config=self.quantization_config,
+            )
+        else:
+            xq = fused_qkv_ragged_matmul(
+                self.kv_params,
+                input=x,
+                wqkv=self.wqkv,
+                input_row_offsets=kwargs["input_row_offsets"],
+                kv_collection=kv_collection,
+                layer_idx=self.layer_idx,
+                n_heads=self.n_heads,
+                bias=self.bias,
+            )
 
         # Apply rope.
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
