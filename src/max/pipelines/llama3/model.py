@@ -94,8 +94,8 @@ class Llama3Inputs(ModelInputs):
         return self.input_row_offsets_or_attn_mask
 
 
-class Llama3Model(PipelineModel[TextContext]):
-    """Llama 3 pipeline model implementation."""
+class LlamaModelBase(PipelineModel[TextContext]):
+    """Base Llama pipeline model implementation."""
 
     model: Model
     """Compiled and initialized model ready for inference."""
@@ -625,3 +625,12 @@ class Llama3Model(PipelineModel[TextContext]):
         return compute_log_probabilities(
             _get_logits_and_samples, batch_top_n, batch_echo
         )
+
+
+class Llama3Model(LlamaModelBase):
+    """Llama 3 pipeline model implementation."""
+
+    def __init__(
+        self, pipeline_config: PipelineConfig, session: InferenceSession
+    ) -> None:
+        super().__init__(pipeline_config, session)
