@@ -613,7 +613,7 @@ class PipelineConfig:
     max_cache_batch_size: Optional[int] = None
     """DEPRECATED: The maximum cache batch size to use for the model. Use max_batch_size instead."""
 
-    gpu_profiling: str = "false"
+    gpu_profiling: str = os.environ.get("MODULAR_ENABLE_PROFILING", "false")
     """Whether to enable GPU profiling of the model."""
 
     def __post_init__(self) -> None:
