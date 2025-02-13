@@ -23,7 +23,7 @@ from typing import Any, Callable, Dict, Iterable, Tuple
 
 from max.graph import DeviceRef, TensorValue, Weight
 
-from ._identity import IdentitySet
+from .._identity import IdentitySet
 
 
 @dataclass
@@ -69,15 +69,26 @@ class LayerV2(Layer, ABC):
         self._sharding_strategy: ShardingStrategy | None = None
 
     def __setattr__(self, name, value):
-        if isinstance(value, LayerV2):
-            self._sublayers[name] = value
-            if self._devices or self._sharding_strategy:
-                value.to(
-                    *self._devices, sharding_strategy=self._sharding_strategy
-                )
+        try:
+            if isinstance(value, LayerV2):
+                self._sublayers[name] = value
+                if self._devices or self._sharding_strategy:
+                    value.to(
+                        *self._devices,
+                        sharding_strategy=self._sharding_strategy,
+                    )
+            elif isinstance(value, Weight):
+                self._layer_weights[name] = value
+        except AttributeError:
+            # The layer didn't call `super().__init__()` first thing.
+            LayerV2.__init__(self)
+            self.__setattr__(name, value)
+            return
+        super().__setattr__(name, value)
 
-        elif isinstance(value, Weight):
-            self._layer_weights[name] = value
+    def __repr__(self):
+        # TODO: Make this pretty
+        return f"{type(self).__name__}({len(self.sublayers)} layers, {len(self.layer_weights)} weights)"
 
     def to(
         self,

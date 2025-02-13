@@ -36,6 +36,7 @@ from ..rotary_embedding import OptimizedRotaryEmbedding
 from .interfaces import (
     AttentionImpl,
     AttentionImplQKV,
+    AttentionImplV2,
     DistributedAttentionImpl,
 )
 
@@ -112,6 +113,91 @@ class AttentionWithRope(AttentionImpl):
             input=xq,
             kv_collection=kv_collection,
             layer_idx=self.layer_idx,
+            input_row_offsets=kwargs["input_row_offsets"],
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+        )
+
+        attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
+
+        return self.wo(attn_out)
+
+
+class AttentionWithRopeV2(AttentionImplV2):
+    """Implementation of attention that uses the rope frequency.
+
+    `AttentionWithRopeV2` will replace `AttentionWithRope` as we roll out
+    the new Layer API.
+    """
+
+    # This class will not use the RotaryEmbedding to
+    # calculate rope, but it already includes a freqs_cis
+    # calculation, which we will borrow
+    rope: OptimizedRotaryEmbedding
+
+    def __init__(self, *args, rope: OptimizedRotaryEmbedding, **kwargs):
+        """Initializes the attention layer.
+
+        Args:
+            num_attention_heads: The number of attention heads.
+            num_key_value_heads: Number of key/value heads.
+            hidden_size: The dimension of the hidden states.
+            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
+            layer_idx: The layer number associated with this Attention block.
+            dtype: DType of the
+            device: Device to place the weights and run the computation.
+            rope: The rope layer to borrow the freq_cis value from.
+        """
+        super().__init__(*args, **kwargs)
+        self.rope = rope
+
+    def __call__(
+        self,
+        x: TensorValue,
+        kv_collection: Union[
+            ContinuousBatchingKVCacheCollection, PagedKVCacheCollection
+        ],
+        **kwargs,
+    ) -> TensorValue:
+        # Get attributes from input.
+        total_seq_len = x.shape[0]
+
+        layer_idx = ops.constant(self.layer_idx, DType.uint32)
+
+        # Call into fused qkv ragged matmul.
+        xq = fused_qkv_ragged_matmul(
+            self.kv_params,
+            input=x,
+            wqkv=self.wqkv,
+            input_row_offsets=kwargs["input_row_offsets"],
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
+            n_heads=self.n_heads,
+        )
+
+        # Apply rope.
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
+
+        if xq.device is not None:
+            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype).to(xq.device)
+        else:
+            freqs_cis = ops.cast(self.rope.freqs_cis, xq.dtype)
+
+        xq = fused_qk_ragged_rope(
+            self.kv_params,
+            xq,
+            kwargs["input_row_offsets"],
+            kv_collection,
+            freqs_cis,
+            layer_idx,
+            interleaved=self.rope.interleaved,
+        )
+
+        # Calculate Flash Attention.
+        attn_out = flash_attention_ragged(
+            self.kv_params,
+            input=xq,
+            kv_collection=kv_collection,
+            layer_idx=layer_idx,
             input_row_offsets=kwargs["input_row_offsets"],
             mask_variant=MHAMaskVariant.CAUSAL_MASK,
         )

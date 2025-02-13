@@ -15,9 +15,17 @@
 
 from dataclasses import dataclass
 
-from max.graph import DeviceRef, TensorType, TensorValue, TensorValueLike, ops
+from max.dtype import DType
+from max.graph import (
+    DeviceRef,
+    TensorType,
+    TensorValue,
+    TensorValueLike,
+    Weight,
+    ops,
+)
 
-from ..layer import Layer
+from ..layer import Layer, LayerV2
 
 
 @dataclass
@@ -40,3 +48,17 @@ class DistributedRMSNorm(Layer):
 
     def __call__(self, xs: list[TensorValue]) -> list[TensorValue]:
         return [self.rms_norms[i](xs[i]) for i in range(len(self.devices))]
+
+
+class RMSNormV2(LayerV2):
+    def __init__(self, dim: int, eps: float = 1e-6):
+        super().__init__()
+        self.weight = Weight("weight", DType.float32, [dim])
+        self.eps = eps
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        return ops.custom(
+            "rms_norm",
+            [x, ops.cast(self.weight, x.dtype), ops.cast(self.eps, x.dtype)],
+            [TensorType(dtype=x.dtype, shape=x.shape, device=x.device)],
+        )[0].tensor

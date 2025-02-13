@@ -14,7 +14,6 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
@@ -26,22 +25,33 @@ from max.pipelines.kv_cache import (
     PagedKVCacheCollection,
 )
 
-from ..attention.interfaces import AttentionImpl, AttentionImplQKV
-from ..embedding import Embedding
-from ..layer import Layer
-from ..linear import MLP, Linear
-from ..norm import LayerNorm, RMSNorm
+from ..attention.interfaces import (
+    AttentionImpl,
+    AttentionImplQKV,
+    AttentionImplV2,
+)
+from ..embedding import Embedding, EmbeddingV2
+from ..layer import LayerList, LayerV2
+from ..linear import MLP, MLPV2, Linear, LinearV2
+from ..norm import LayerNorm, RMSNorm, RMSNormV2
 from ..sequential import Sequential
 
 
-@dataclass
-class TransformerBlock(Layer):
+class TransformerBlock(LayerV2):
     """Stack of Attention, FeedForward, and RMSNorm layers."""
 
-    attention: AttentionImpl | AttentionImplQKV
-    mlp: MLP | Sequential
-    attention_norm: RMSNorm | LayerNorm
-    mlp_norm: RMSNorm | LayerNorm
+    def __init__(
+        self,
+        attention: AttentionImpl | AttentionImplV2 | AttentionImplQKV,
+        mlp: MLP | MLPV2 | Sequential,
+        attention_norm: RMSNorm | RMSNormV2 | LayerNorm,
+        mlp_norm: RMSNorm | RMSNormV2 | LayerNorm,
+    ):
+        super().__init__()
+        self.attention = attention
+        self.mlp = mlp
+        self.attention_norm = attention_norm
+        self.mlp_norm = mlp_norm
 
     def __call__(
         self,
@@ -62,21 +72,34 @@ class TransformerBlock(Layer):
         return h
 
 
-@dataclass
-class Transformer(Layer):
+class Transformer(LayerV2):
     """Transformer model consisting for TransformerBlock layers."""
 
-    dim: int
-    n_heads: int
-    layers: list[TransformerBlock]
-    norm: RMSNorm | LayerNorm
-    output: Linear
-    embedding: Embedding
-    kv_params: KVCacheParams
-    kv_collection_constructor: (
-        FetchContinuousBatchingKVCacheCollection | FetchPagedKVCacheCollection
-    )
-    all_logits: bool = False
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        layers: list[TransformerBlock],
+        norm: RMSNorm | RMSNormV2 | LayerNorm,
+        output: Linear | LinearV2,
+        embedding: Embedding | EmbeddingV2,
+        kv_params: KVCacheParams,
+        kv_collection_constructor: (
+            FetchContinuousBatchingKVCacheCollection
+            | FetchPagedKVCacheCollection
+        ),
+        all_logits: bool = False,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.n_heads = n_heads
+        self.layers = LayerList(layers)
+        self.norm = norm
+        self.output = output
+        self.embedding = embedding
+        self.kv_params = kv_params
+        self.kv_collection_constructor = kv_collection_constructor
+        self.all_logits = all_logits
 
     def __call__(
         self,

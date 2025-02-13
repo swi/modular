@@ -12,9 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from dataclasses import dataclass
+from typing import Optional
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, Weight, ops
+from max.graph.quantization import QuantizationEncoding
 
 from .layer import Layer
 
@@ -71,7 +73,8 @@ class EmbeddingV2(Layer):
         hidden_dim: int,
         dtype: DType,
         device: DeviceRef,
-        name: str,
+        quantization_encoding: Optional[QuantizationEncoding] = None,
+        name: Optional[str] = None,
     ) -> None:
         """Initializes the embedding layer with the given arguments.
 
@@ -89,7 +92,11 @@ class EmbeddingV2(Layer):
 
         self.device = device
         self.weight = Weight(
-            name, dtype, shape=(vocab_size, hidden_dim), device=DeviceRef.CPU()
+            name or "weight",
+            dtype,
+            shape=(vocab_size, hidden_dim),
+            device=DeviceRef.CPU(),
+            quantization_encoding=quantization_encoding,
         )
 
     def __call__(self, indices: TensorValueLike) -> TensorValue:

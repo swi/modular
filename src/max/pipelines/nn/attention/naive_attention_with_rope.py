@@ -12,31 +12,40 @@
 # ===----------------------------------------------------------------------=== #
 """An attention layer, using only native max graph operations, the naive cache, and ROPE."""
 
+from __future__ import annotations
+
 import math
-from dataclasses import dataclass
 
 from max.graph import BufferValue, TensorValue, TensorValueLike, ops
 from max.pipelines.kv_cache import KVCacheParams
 
-from ..layer import Layer
-from ..linear import Linear
+from ..layer import LayerV2
+from ..linear import Linear, LinearV2
 from ..rotary_embedding import RotaryEmbedding
 
 
-@dataclass
-class NaiveAttentionWithRope(Layer):
-    n_heads: int
-    kv_params: KVCacheParams
-    dim: int
+class NaiveAttentionWithRope(LayerV2):
+    def __init__(
+        self,
+        n_heads: int,
+        kv_params: KVCacheParams,
+        dim: int,
+        wq: Linear | LinearV2,
+        wk: Linear | LinearV2,
+        wv: Linear | LinearV2,
+        wo: Linear | LinearV2,
+        rope: RotaryEmbedding,
+    ):
+        super().__init__()
+        self.n_heads = n_heads
+        self.kv_params = kv_params
+        self.dim = dim
+        self.wq = wq
+        self.wk = wk
+        self.wv = wv
+        self.wo = wo
+        self.rope = rope
 
-    wq: Linear
-    wk: Linear
-    wv: Linear
-    wo: Linear
-
-    rope: RotaryEmbedding
-
-    def __post_init__(self) -> None:
         if self.kv_params.cache_strategy.uses_opaque():
             raise ValueError(
                 f"{self.kv_params.cache_strategy} cache strategy, not supported"

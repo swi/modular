@@ -13,26 +13,31 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from max.dtype import DType
 from max.graph import TensorValue, TensorValueLike, ops
 
 from ..attention import NaiveAttentionWithRope
-from ..embedding import Embedding
-from ..layer import Layer
-from ..linear import MLP, Linear
-from ..norm import RMSNorm
+from ..embedding import Embedding, EmbeddingV2
+from ..layer import LayerList, LayerV2
+from ..linear import MLP, MLPV2, Linear, LinearV2
+from ..norm import RMSNorm, RMSNormV2
 
 
-@dataclass
-class NaiveTransformerBlock(Layer):
+class NaiveTransformerBlock(LayerV2):
     """Max-Graph Only Stack of Attention, FeedForward, and RMSNorm layers."""
 
-    attention: NaiveAttentionWithRope
-    mlp: MLP
-    attention_norm: RMSNorm
-    mlp_norm: RMSNorm
+    def __init__(
+        self,
+        attention: NaiveAttentionWithRope,
+        mlp: MLP | MLPV2,
+        attention_norm: RMSNorm | RMSNormV2,
+        mlp_norm: RMSNorm | RMSNormV2,
+    ):
+        super().__init__()
+        self.attention = attention
+        self.mlp = mlp
+        self.attention_norm = attention_norm
+        self.mlp_norm = mlp_norm
 
     def __call__(
         self,
@@ -58,18 +63,29 @@ class NaiveTransformerBlock(Layer):
         return h  # type: ignore
 
 
-@dataclass
-class NaiveTransformer(Layer):
+class NaiveTransformer(LayerV2):
     """Max-Graph only model consisting of NaiveTransformerBlock layers."""
 
-    dim: int
-    n_heads: int
-    layers: list[NaiveTransformerBlock]
-    norm: RMSNorm
-    output: Linear
-    theta: float
-    embedding: Embedding
-    output_type: DType | None = None
+    def __init__(
+        self,
+        dim: int,
+        n_heads: int,
+        layers: list[NaiveTransformerBlock],
+        norm: RMSNorm | RMSNormV2,
+        output: Linear | LinearV2,
+        theta: float,
+        embedding: Embedding | EmbeddingV2,
+        output_type: DType | None = None,
+    ):
+        super().__init__()
+        self.dim = dim
+        self.n_heads = n_heads
+        self.layers = LayerList(layers)
+        self.norm = norm
+        self.output = output
+        self.theta = theta
+        self.embedding = embedding
+        self.output_type = output_type
 
     def __call__(
         self,
@@ -87,7 +103,7 @@ class NaiveTransformer(Layer):
                 attention_mask,
                 k_cache,
                 v_cache,
-                start_pos,  # type: ignore
+                start_pos,
                 i,
             )
 

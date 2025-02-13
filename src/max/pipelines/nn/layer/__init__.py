@@ -10,11 +10,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""A General sequential layer, each layer is executed with the outputs of the previous."""
 
-from .layer import LayerList
+from .layer import (
+    Layer,
+    LayerV2,
+    add_layer_hook,
+    clear_hooks,
+    recursive_named_layers,
+)
+from .layer_list import LayerList
 
-
-class Sequential(LayerList):
-    """A sequential stack of layers where each layer is called by the outputs
-    of the previous layer."""
+__all__ = [
+    "Layer",
+    "LayerV2",
+    "add_layer_hook",
+    "clear_hooks",
+    "recursive_named_layers",
+    "LayerList",
+]

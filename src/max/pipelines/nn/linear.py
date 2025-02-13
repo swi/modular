@@ -32,10 +32,10 @@ from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.graph.weights import Weights
 
 from .kernels import swish_glu
-from .layer import Layer
+from .layer import Layer, LayerV2
 
 
-class LinearV2(Layer):
+class LinearV2(LayerV2):
     """
     Applies a linear transformation to incoming data: :math:`y = xW^T + b`.
 
@@ -79,8 +79,9 @@ class LinearV2(Layer):
         out_dim: int,
         dtype: DType,
         device: DeviceRef,
-        name: str,
         has_bias: bool = False,
+        quantization_encoding: Optional[QuantizationEncoding] = None,
+        name: Optional[str] = None,
     ) -> None:
         """Initializes the linear layer with weights and optional bias.
 
@@ -98,19 +99,21 @@ class LinearV2(Layer):
         super().__init__()
 
         self.weight = Weight(
-            name=f"{name}.weight",
+            name=f"{name}.weight" if name else "weight",
             dtype=dtype,
             shape=(out_dim, in_dim),
             device=DeviceRef.CPU(),
+            quantization_encoding=quantization_encoding,
         )
         self.device = device
 
         if has_bias:
             self.bias = Weight(
-                name=f"{name}.bias",
+                name=f"{name}.bias" if name else "bias",
                 dtype=dtype,
                 shape=(out_dim,),
                 device=DeviceRef.CPU(),
+                quantization_encoding=quantization_encoding,
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -128,11 +131,19 @@ class LinearV2(Layer):
         Raises:
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
         """
-        weight = TensorValue(self.weight).to(self.device)
+        weight = self.weight.to(self.device)
 
-        res = x @ weight.T
+        if self.weight.quantization_encoding:
+            res = ops.qmatmul(
+                self.weight.quantization_encoding,
+                None,
+                x,
+                weight,
+            )
+        else:
+            res = x @ weight.T
         if self.bias is not None:
-            res += TensorValue(self.bias).to(self.device)
+            res += self.bias.to(self.device)
         return res
 
 
@@ -141,6 +152,17 @@ def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:
         return value
     else:
         return value.weight.allocate(dtype, shape)
+
+
+def linear_class(
+    quantization_encoding: Optional[QuantizationEncoding],
+) -> type[LinearV2]:
+    """Returns a Linear class to use that's compatible with the quantization
+    encoding."""
+    if quantization_encoding and hasattr(quantization_encoding, "config"):
+        return GPTQLinearV2
+    else:
+        return LinearV2
 
 
 @dataclass
@@ -354,6 +376,73 @@ class GPTQLinear(QLinear):
 
 
 @dataclass
+class GPTQLinearV2(LinearV2):
+    "A Linear layer for GPTQ encoding"
+
+    def __init__(
+        self,
+        in_dim: int,
+        out_dim: int,
+        dtype: DType,
+        device: DeviceRef,
+        has_bias: bool = False,
+        quantization_encoding: Optional[QuantizationEncoding] = None,
+        quantization_config: Optional[QuantizationConfig] = None,
+    ) -> None:
+        """Initializes the linear layer with weights and optional bias with
+        GPTQ quantization.
+
+        Args:
+            in_dim: The dimensionality of the input space.
+            out_dim: The dimensionality of the output space.
+            dtype: The data type for both weights and bias.
+            device: The target device for computation.
+                Weights remain on CPU until moved during computation.
+            name: Base name for weights (appended with ``.weight`` and
+                ``.bias`` if applicable).
+            has_bias: When :obj:`True`, adds a bias vector to the layer.
+                Defaults to :obj:`False`.
+        """
+        super().__init__(
+            in_dim, out_dim, dtype, device, has_bias, quantization_encoding
+        )
+
+        assert quantization_config, (
+            "QuantizationConfig must be provided for GPTQLinear"
+        )
+        assert quantization_config.sym, "GPTQ with sym=False is not supported."
+
+        self.quantization_config = quantization_config
+
+        desc_act = self.quantization_config.desc_act
+
+        self.perm_idx = None
+        if desc_act:
+            self.perm_idx = Weight("perm_idx", DType.int32, [out_dim])
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        assert self.weight.quantization_encoding is not None
+        if self.perm_idx is not None:
+            res = ops.qmatmul(
+                self.weight.quantization_encoding,
+                self.quantization_config,
+                ops.gather(x, self.perm_idx, axis=2),
+                self.weight,
+                self.perm_idx,
+            )
+        else:
+            res = ops.qmatmul(
+                self.weight.quantization_encoding,
+                None,
+                x,
+                self.weight,
+            )
+        if self.bias is not None:
+            res += TensorValue(self.bias)
+        return res
+
+
+@dataclass
 class MLP(Layer):
     """
     Simple multi-layer perceptron composed of three linear layers.
@@ -382,6 +471,42 @@ class MLP(Layer):
             )
 
         return self.down_proj(ops.silu(self.gate_proj(x)) * self.up_proj(x))  # type: ignore
+
+
+@dataclass
+class MLPV2(LayerV2):
+    """
+    Simple multi-layer perceptron composed of three linear layers.
+    Uses SiLU activation function.
+    """
+
+    gate_proj: LinearV2
+    down_proj: LinearV2
+    up_proj: LinearV2
+
+    def __post_init__(self):
+        super().__init__()
+
+    def __call__(self, x: TensorValueLike) -> TensorValue:
+        if (
+            self.gate_proj.bias is None
+            and self.up_proj.bias is None
+            and TensorValue(x).rank == 2
+            and TensorValue(x).device is not None
+            and TensorValue(x).device != DeviceRef.CPU()
+            and False  # GEX-1476: This causes elaboration errors - disable swish_glu pathway.
+        ):
+            return self.down_proj[0](
+                swish_glu(
+                    x,
+                    self.gate_proj.weight,
+                    self.up_proj.weight,
+                )
+            )
+
+        return self.down_proj(
+            ops.silu(self.gate_proj[0](x)) * self.up_proj[0](x)  # type: ignore
+        )
 
 
 @dataclass

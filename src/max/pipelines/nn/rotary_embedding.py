@@ -20,11 +20,11 @@ import numpy as np
 from max.dtype import DType
 from max.graph import Dim, DimLike, TensorValue, TensorValueLike, ops
 
-from .layer import Layer
+from .layer import LayerV2
 
 
 @dataclass
-class RotaryEmbedding(Layer):
+class RotaryEmbedding(LayerV2):
     """
     RotaryEmbedding layer to calculate and apply the frequency tensor for complex exponentials.
     """
@@ -39,6 +39,9 @@ class RotaryEmbedding(Layer):
     """Scaling factor for the positional frequencies."""
     _freqs_cis: Optional[TensorValueLike] = None
     interleaved: bool = True
+
+    def __post_init__(self):
+        super().__init__()
 
     def freqs_cis_base(self) -> TensorValue:
         """
