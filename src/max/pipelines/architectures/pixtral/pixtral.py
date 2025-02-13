@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Sequence
 from typing import cast
@@ -21,7 +22,6 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
 from max.graph.weights import SafetensorWeights
-from max.loggers import get_logger
 from max.pipelines import (
     ModelInputs,
     ModelOutputs,
@@ -40,7 +40,7 @@ from max.pipelines.kv_cache import (
 from .model.graph import _build_text_graph, _build_vision_graph
 from .vision_encoder.attention_utils import causal_attention_mask_2d_from_imgs
 
-logger = get_logger("max.pipelines")
+logger = logging.getLogger("max.pipelines")
 
 
 class PixtralInputs(ModelInputs):

@@ -12,12 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-import logging
-
-# Default to only error logging unless otherwise overridden.
-logging.getLogger().setLevel(logging.ERROR)
-
 import functools
+import logging
 import os
 import signal
 
@@ -31,6 +27,8 @@ from max.entrypoints.cli import (
 )
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.architectures import register_all_models
+
+logger = logging.getLogger(__name__)
 
 
 class ModelGroup(click.Group):

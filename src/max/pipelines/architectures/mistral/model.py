@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Sequence, cast
 
@@ -20,7 +21,6 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.engine import InferenceSession, Model
 from max.graph.weights import SafetensorWeights
-from max.loggers import get_logger
 from max.pipelines import (
     ModelInputs,
     ModelOutputs,
@@ -38,7 +38,7 @@ from max.pipelines.kv_cache import (
 
 from .graph import _build_graph
 
-logger = get_logger("max.pipelines")
+logger = logging.getLogger("max.pipelines")
 
 
 class MistralInputs(ModelInputs):

@@ -15,13 +15,13 @@
 
 from __future__ import annotations
 
+import logging
 import warnings
 from typing import Any, Optional, cast
 
 import numpy as np
 import torch
 from max.driver import Tensor
-from max.loggers import get_logger
 from transformers import (
     AutoModel,
     AutoModelForCausalLM,
@@ -35,7 +35,7 @@ from .interfaces import EmbeddingsGenerator, TokenGenerator
 from .kv_cache import ContinuousHFStaticCache
 from .response import EmbeddingsResponse, TextResponse
 
-logger = get_logger("max.pipelines")
+logger = logging.getLogger("max.pipelines")
 
 DEFAULT_MAX_SEQ_LEN = 512
 
