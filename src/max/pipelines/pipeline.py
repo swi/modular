@@ -396,6 +396,9 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # Initialize Session.
         session = InferenceSession(devices=self._pipeline_config.devices)
 
+        # Enable profiling if enabled.
+        session.gpu_profiling(self._pipeline_config.gpu_profiling)
+
         # Load model.
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config, session=session

@@ -613,6 +613,9 @@ class PipelineConfig:
     max_cache_batch_size: Optional[int] = None
     """DEPRECATED: The maximum cache batch size to use for the model. Use max_batch_size instead."""
 
+    gpu_profiling: str = "false"
+    """Whether to enable GPU profiling of the model."""
+
     def __post_init__(self) -> None:
         if not self.huggingface_repo_id:
             msg = "huggingface_repo_id must be provided and must be a valid Hugging Face repo or local directory"
@@ -693,6 +696,20 @@ class PipelineConfig:
             if self.device_specs[0] == DeviceSpec.cpu():
                 msg = "enable_structured_output is not currently supported on CPU."
                 raise ValueError(msg)
+
+        if self.gpu_profiling not in (
+            "false",
+            "off",
+            "no",
+            "0",
+            "true",
+            "on",
+            "yes",
+            "1",
+            "detailed",
+        ):
+            msg = "gpu_profiling must be a boolean or 'detailed'"
+            raise ValueError(msg)
 
     def __getstate__(self) -> dict[str, Any]:
         """Override `__getstate__` to exclude the Hugging Face config."""
@@ -947,6 +964,7 @@ class PipelineConfig:
             "trust_remote_code": "Indicate whether to allow custom modelling files from Hugging Face repositories. Set this to true with caution, as it may introduce security risks.",
             "force_download": "Specify whether to forcefully download a file even if it already exists in local cache. Set this to true if you want to ensure you have the latest version.",
             "enable_echo": "Whether the model should be built with echo capabilities. This defaults to false.",
+            "gpu_profiling": "Whether to enable GPU profiling of the model. This defaults to false.",
         }
 
     def huggingface_weights_repo(self) -> HuggingFaceRepo:
