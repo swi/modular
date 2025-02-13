@@ -25,6 +25,7 @@ from typing import Optional, Sequence
 import tqdm
 from max.pipelines.config import PipelineConfig
 from max.pipelines.registry import PIPELINE_REGISTRY
+from max.serve.config import Settings
 from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
     TokenGeneratorRequest,
@@ -48,7 +49,7 @@ class LLM:
     _request_queue: RequestQueue
     _response_queue: ResponseQueue
 
-    def __init__(self, pipeline_config: PipelineConfig):
+    def __init__(self, settings: Settings, pipeline_config: PipelineConfig):
         self._pc = ProcessControl(threading, "LLM")
         self._request_queue = Queue()
         self._response_queue = Queue()
@@ -59,6 +60,7 @@ class LLM:
                 pipeline_config,
                 self._request_queue,
                 self._response_queue,
+                settings,
             ),
         )
         self._async_runner.start()
@@ -88,6 +90,7 @@ def _run_async_worker(
     pipeline_config: PipelineConfig,
     request_queue: RequestQueue,
     response_queue: ResponseQueue,
+    settings: Settings,
 ):
     asyncio.run(
         _async_worker(
@@ -95,6 +98,7 @@ def _run_async_worker(
             pipeline_config,
             request_queue,
             response_queue,
+            settings,
         )
     )
 
@@ -104,6 +108,7 @@ async def _async_worker(
     pipeline_config: PipelineConfig,
     request_queue: RequestQueue,
     response_queue: ResponseQueue,
+    settings: Settings,
 ):
     tokenizer, model_factory = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config
@@ -116,6 +121,7 @@ async def _async_worker(
         start_model_worker(
             model_factory=model_factory,
             batch_config=batch_config,
+            settings=settings,
         ) as engine_queue,
         # Create dynamic and continuous batching workers and associated queues
         # to feed the model worker process.

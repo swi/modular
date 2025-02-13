@@ -47,7 +47,7 @@ def serve_pipeline(
     failure_percentage: Optional[int] = None,
 ):
     # Initialize settings
-    settings = Settings()
+    settings = Settings(MAX_SERVE_USE_HEARTBEAT=False)
 
     # TODO: make validate_pipeline_config more generic or cleanly handle the
     # case where this is a generalized model unsupported by MAX
@@ -107,7 +107,6 @@ def serve_pipeline(
         model_factory=pipeline_factory,
         pipeline_config=batch_config,
         tokenizer=tokenizer,
-        use_heartbeat=False,
     )
 
     # Intialize and serve webserver.
