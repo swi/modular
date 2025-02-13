@@ -29,12 +29,6 @@ from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.architectures import register_all_models
 
 logger = logging.getLogger(__name__)
-try:
-    import rich.traceback
-
-    rich.traceback.install()
-except ImportError:
-    pass
 
 
 class ModelGroup(click.Group):
