@@ -14,18 +14,18 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from collections import deque
 from typing import Any, Optional, Tuple
 
 from max.graph import TensorValue
+from max.loggers import get_logger
 from max.pipelines.nn._identity import IdentitySet
 from max.pipelines.nn.layer import Layer, add_layer_hook, clear_hooks
 
 from .base_print_hook import BasePrintHook
 
-logger = logging.getLogger("max.pipelines")
+logger = get_logger("max.pipelines")
 
 
 class PrintHook(BasePrintHook):

@@ -17,7 +17,6 @@ Implementation is based on MPNetModel from the transformers library.
 
 from __future__ import annotations
 
-import logging
 import time
 from collections.abc import Sequence
 from typing import cast
@@ -25,6 +24,7 @@ from typing import cast
 import numpy as np
 from max.driver import Tensor
 from max.engine import InferenceSession, Model
+from max.loggers import get_logger
 from max.pipelines import (
     ModelInputs,
     ModelOutputs,
@@ -38,7 +38,7 @@ from max.pipelines.kv_cache import KVCacheParams
 
 from .graph import build_graph
 
-logger = logging.getLogger("max.pipelines")
+logger = get_logger("max.pipelines")
 
 PAD_VALUE = 1
 

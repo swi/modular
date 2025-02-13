@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import logging
 import time
 from collections.abc import Sequence
 from typing import Any, Iterable, Optional, cast, final
@@ -24,6 +23,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import Dim, Graph, Shape, TensorType, TensorValue, Type, ops
 from max.graph.weights import Weights
+from max.loggers import get_logger
 from max.pipelines import (
     ModelInputs,
     ModelOutputs,
@@ -48,7 +48,7 @@ from max.pipelines.nn.layer import Layer
 from .language_model import CausalLanguageModel, instantiate_language_model
 from .vision_model import instantiate_vision_model
 
-logger = logging.getLogger("max.pipelines")
+logger = get_logger("max.pipelines")
 
 
 class MultimodalKVCacheManager(KVCacheManager):

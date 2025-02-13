@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import logging
 import time
 from typing import List, Sequence, cast
 
@@ -23,6 +22,7 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.graph.weights import Weights
+from max.loggers import get_logger
 from max.pipelines import (
     LogProbabilities,
     ModelInputs,
@@ -49,7 +49,7 @@ from .gguf import (
     transformer,
 )
 
-logger = logging.getLogger("max.pipelines")
+logger = get_logger("max.pipelines")
 
 
 class Llama3Inputs(ModelInputs):

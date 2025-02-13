@@ -18,7 +18,6 @@ from __future__ import annotations
 import datetime
 import glob
 import json
-import logging
 import os
 import struct
 from dataclasses import dataclass, field
@@ -47,10 +46,11 @@ from max.graph.weights import (
     Weights,
     WeightsConverter,
 )
+from max.loggers import get_logger
 from max.pipelines.kv_cache import KVCacheStrategy
 from transformers import AutoConfig
 
-logger = logging.getLogger("max.pipelines")
+logger = get_logger("max.pipelines")
 
 
 class PipelineEngine(str, Enum):

@@ -13,7 +13,6 @@
 
 from __future__ import annotations
 
-import logging
 import time
 import warnings
 from collections.abc import Sequence
@@ -23,6 +22,7 @@ import numpy as np
 from max.driver import Device, DeviceSpec, Tensor
 from max.engine import InferenceSession, Model
 from max.graph.weights import GGUFWeights
+from max.loggers import get_logger
 from max.pipelines import (
     LogProbabilities,
     ModelInputs,
@@ -42,7 +42,7 @@ from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
 
 from .graph import _build_graph
 
-logger = logging.getLogger("max.pipelines")
+logger = get_logger("max.pipelines")
 
 
 class ReplitInputs(ModelInputs):

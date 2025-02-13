@@ -16,13 +16,13 @@
 from __future__ import annotations
 
 import functools
-import logging
 import os
 from io import StringIO
 from typing import Callable, Optional, Type, Union, cast
 
 import torch
 from max.graph.weights import WeightsConverter
+from max.loggers import get_logger
 
 from .config import (
     PipelineConfig,
@@ -43,7 +43,7 @@ from .kv_cache import KVCacheStrategy
 from .pipeline import KVCacheMixin, PipelineModel, TextGenerationPipeline
 from .tokenizer import TextAndVisionTokenizer, TextTokenizer
 
-logger = logging.getLogger("max.pipelines")
+logger = get_logger("max.pipelines")
 
 # Store a map of checkpoint encodings that can be cast to another dtype while
 # keeping similar results. Maps the requested encoding to an acceptable

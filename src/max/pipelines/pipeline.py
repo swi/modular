@@ -33,6 +33,7 @@ import torch
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.loggers import get_logger
 from max.pipelines.kv_cache import infer_optimal_batch_size
 from max.profiler import Tracer, traced
 from transformers import AutoTokenizer
@@ -57,7 +58,7 @@ try:
 except ImportError:
     pass
 
-logger = logging.getLogger("max.pipelines")
+logger = get_logger("max.pipelines")
 
 ARCH_SAFE_VRAM_USAGE_LIMIT = {
     "DeepseekCoder": 0.96,

@@ -18,11 +18,11 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import logging
 from typing import Optional, Sequence, Union, cast
 
 import numpy as np
 import torch
+from max.loggers import get_logger
 from PIL import Image
 from transformers import (
     AutoProcessor,
@@ -44,7 +44,7 @@ from .interfaces import (
     TokenGeneratorRequestTool,
 )
 
-logger = logging.getLogger("max.pipelines")
+logger = get_logger("max.pipelines")
 
 
 class IdentityPipelineTokenizer(
