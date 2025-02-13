@@ -11,15 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from .arch import llama_arch
 
-from max.pipelines import PIPELINE_REGISTRY
-
-from .arch import exaone_arch, llama_arch
-from .model import Llama3Model
-
-__all__ = [
-    "Llama3Model",
-]
-
-PIPELINE_REGISTRY.register(llama_arch)
-PIPELINE_REGISTRY.register(exaone_arch)
+__all__ = ["llama_arch"]
