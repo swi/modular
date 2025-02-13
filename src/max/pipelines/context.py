@@ -139,6 +139,7 @@ class TextContext:
 
         self.matcher = None
         self.json_schema = json_schema
+        self.is_initial_prompt = True
 
     def set_matcher(self, matcher: "xgr.GrammarMatcher") -> None:  # type: ignore
         self.matcher = matcher
@@ -188,6 +189,8 @@ class TextContext:
         if self.matcher:
             assert self.matcher.accept_token(new_token)
 
+        self.is_initial_prompt = False
+
     def trim_prompt(self, trim_len: int) -> None:
         """Trims the current prompt by the given number of tokens."""
         if trim_len == 0:
@@ -204,6 +207,8 @@ class TextContext:
         self.active_idx = tokens_in_new_prompt
         self.current_length = tokens_in_new_prompt
         self.active_length = tokens_in_new_prompt
+
+        self.is_initial_prompt = True
 
 
 class TextAndVisionContext:
@@ -251,6 +256,7 @@ class TextAndVisionContext:
 
         self.matcher = None
         self.json_schema = json_schema
+        self.is_initial_prompt = True
 
     def set_matcher(self, matcher: "xgr.GrammarMatcher") -> None:  # type: ignore
         self.matcher = matcher
@@ -294,6 +300,8 @@ class TextAndVisionContext:
         if self.matcher:
             assert self.matcher.accept_token(new_token)
 
+        self.is_initial_prompt = False
+
     def trim_prompt(self, trim_len: int) -> None:
         """Trims the current prompt by the given number of tokens."""
         if trim_len == 0:
@@ -310,3 +318,5 @@ class TextAndVisionContext:
         self.active_idx = tokens_in_new_prompt
         self.current_length = tokens_in_new_prompt
         self.active_length = tokens_in_new_prompt
+
+        self.is_initial_prompt = True

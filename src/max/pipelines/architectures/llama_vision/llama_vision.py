@@ -520,10 +520,7 @@ class LlamaVisionModel(Layer):
         aspect_ratio_mask: TensorValue,
     ) -> TensorValue:
         if aspect_ratio_ids is None:
-            msg = (
-                "`aspect_ratio_ids` must be provided if `pixel_values` is "
-                "provided"
-            )
+            msg = "`aspect_ratio_ids` must be provided if `pixel_values` is provided"
             raise ValueError(msg)
 
         # Get vision tokens from vision model.
@@ -870,6 +867,13 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
             msg = (
                 "expected context batch to all have images, or no images at all"
             )
+            raise RuntimeError(msg)
+
+        def initial_prompt_missing_image(ctx: TextAndVisionContext) -> bool:
+            return ctx.is_initial_prompt and not has_image(ctx.pixel_values)
+
+        if any(initial_prompt_missing_image(ctx) for ctx in context_batch):
+            msg = "The Llama Vision model currently requires a prompt with an image. Consider using the regular text-only models for non-image prompts"
             raise RuntimeError(msg)
 
         # Prepare vision inputs if applicable.
