@@ -11,11 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from max.pipelines import PIPELINE_REGISTRY
-
 from .arch import llama_vision_arch
-from .llama_vision import LlamaVision
 
-PIPELINE_REGISTRY.register(llama_vision_arch)
-
-__all__ = ["LlamaVision"]
+__all__ = ["llama_vision_arch"]
