@@ -358,17 +358,11 @@ class PagedKVCacheManager(KVCacheManager):
         devices: list[Device],
         **kwargs: Any,
     ) -> int:
-        # hardcore assumption that the average sequence length in cache is
-        # half of max
-        average_seq_length = max_seq_len // 2
-
-        block_size_per_token = cls._block_size_per_token(params, num_layers)
-        num_tokens_in_cache = available_cache_memory // block_size_per_token
-
-        # clamp the floor of the paged cache to 32.
-        suggested_batch_size = num_tokens_in_cache // average_seq_length
-        suggested_batch_size = max(suggested_batch_size, 32)
-        return suggested_batch_size
+        # We just hard-code a default of 512 for paged attention.
+        # The worst case scenario if this is too high is that we'll evict
+        # requests at an elevated rate. We print warnings in that case so users
+        # are aware of what needs to be tweaked/changed.
+        return 512
 
     @classmethod
     def _block_shape(
