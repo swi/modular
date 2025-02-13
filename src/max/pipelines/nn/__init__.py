@@ -27,7 +27,7 @@ from .conv import Conv1D, Conv2D
 from .embedding import Embedding, EmbeddingV2
 from .kernels import MHAMaskVariant
 from .linear import MLP, DistributedMLP, Linear, LinearV2
-from .norm import DistributedRMSNorm, LPLayerNorm, RMSNorm
+from .norm import DistributedRMSNorm, LayerNorm, RMSNorm
 from .rotary_embedding import OptimizedRotaryEmbedding, RotaryEmbedding
 from .sequential import Sequential
 from .transformer import (
@@ -58,7 +58,7 @@ __all__ = [
     "EmbeddingV2",
     "Linear",
     "LinearV2",
-    "LPLayerNorm",
+    "LayerNorm",
     "MHAMaskVariant",
     "MLP",
     "DistributedMLP",

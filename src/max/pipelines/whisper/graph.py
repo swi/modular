@@ -19,8 +19,8 @@ from max.pipelines import PipelineConfig
 from max.pipelines.nn import (
     Conv1D,
     Embedding,
+    LayerNorm,
     Linear,
-    LPLayerNorm,
     Sequential,
 )
 
@@ -81,11 +81,9 @@ def embedding(
     )
 
 
-def layer_norm(
-    dims: int, eps: float, weights: SafetensorWeights
-) -> LPLayerNorm:
+def layer_norm(dims: int, eps: float, weights: SafetensorWeights) -> LayerNorm:
     # TODO: check the shape of bias
-    return LPLayerNorm(
+    return LayerNorm(
         weight=weights.weight.allocate(DType.bfloat16, [dims]),
         eps=eps,
         bias=weights.bias.allocate(DType.bfloat16, [dims]),

@@ -30,7 +30,7 @@ from ..attention.interfaces import AttentionImpl, AttentionImplQKV
 from ..embedding import Embedding
 from ..layer import Layer
 from ..linear import MLP, Linear
-from ..norm import LPLayerNorm, RMSNorm
+from ..norm import LayerNorm, RMSNorm
 from ..sequential import Sequential
 
 
@@ -40,8 +40,8 @@ class TransformerBlock(Layer):
 
     attention: AttentionImpl | AttentionImplQKV
     mlp: MLP | Sequential
-    attention_norm: RMSNorm | LPLayerNorm
-    mlp_norm: RMSNorm | LPLayerNorm
+    attention_norm: RMSNorm | LayerNorm
+    mlp_norm: RMSNorm | LayerNorm
 
     def __call__(
         self,
@@ -69,7 +69,7 @@ class Transformer(Layer):
     dim: int
     n_heads: int
     layers: list[TransformerBlock]
-    norm: RMSNorm | LPLayerNorm
+    norm: RMSNorm | LayerNorm
     output: Linear
     embedding: Embedding
     kv_params: KVCacheParams

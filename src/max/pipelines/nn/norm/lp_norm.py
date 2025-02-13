@@ -23,7 +23,7 @@ from ..layer import Layer
 
 
 @dataclass
-class LPLayerNorm(Layer):
+class LayerNorm(Layer):
     """Layer normalization block."""
 
     weight: Weight

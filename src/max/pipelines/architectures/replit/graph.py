@@ -27,8 +27,8 @@ from max.pipelines.nn import (
     AttentionImpl,
     AttentionWithoutMask,
     Embedding,
+    LayerNorm,
     Linear,
-    LPLayerNorm,
     MHAMaskVariant,
     Sequential,
     Transformer,
@@ -60,8 +60,8 @@ def _feed_forward(
     )
 
 
-def _lp_layer_norm(dims: int, eps: float, weights: GGUFWeights) -> LPLayerNorm:
-    return LPLayerNorm(
+def _layer_norm(dims: int, eps: float, weights: GGUFWeights) -> LayerNorm:
+    return LayerNorm(
         weight=weights.weight.allocate(DType.float32, [dims]),
         eps=eps,
     )
@@ -126,12 +126,12 @@ def _transformer(
                     12288,
                     weights.blk[i],
                 ),
-                attention_norm=_lp_layer_norm(
+                attention_norm=_layer_norm(
                     pipeline_config.huggingface_config.d_model,
                     1e-5,
                     weights.blk[i].attn_norm,
                 ),
-                mlp_norm=_lp_layer_norm(
+                mlp_norm=_layer_norm(
                     pipeline_config.huggingface_config.d_model,
                     1e-5,
                     weights.blk[i].ffn_norm,
@@ -154,7 +154,7 @@ def _transformer(
             dim=pipeline_config.huggingface_config.d_model,
             n_heads=pipeline_config.huggingface_config.n_heads,
             layers=layers,
-            norm=_lp_layer_norm(
+            norm=_layer_norm(
                 pipeline_config.huggingface_config.d_model,
                 1e-5,
                 weights.output_norm,

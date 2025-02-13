@@ -29,7 +29,7 @@ from ..attention.interfaces import DistributedAttentionImpl
 from ..embedding import Embedding, EmbeddingV2
 from ..layer import Layer
 from ..linear import DistributedMLP, LinearV2
-from ..norm import DistributedRMSNorm, LPLayerNorm, RMSNorm
+from ..norm import DistributedRMSNorm, LayerNorm, RMSNorm
 
 
 # TODO (pavan): clean up duplicate instances of distribute_value, shard_col_value,
@@ -75,7 +75,7 @@ class DistributedTransformer(Layer):
     dim: int
     n_heads: int
     layers: list[DistributedTransformerBlock]
-    norm: RMSNorm | LPLayerNorm
+    norm: RMSNorm | LayerNorm
     output: LinearV2
     embedding: Embedding | EmbeddingV2
     kv_params: KVCacheParams

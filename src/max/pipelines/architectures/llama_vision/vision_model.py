@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from max.dtype import DType
 from max.graph import Dim, StaticDim, TensorValue, TensorValueLike, ops
 from max.graph.weights import Weights
-from max.pipelines.nn import Conv2D, Embedding, Linear, LPLayerNorm
+from max.pipelines.nn import Conv2D, Embedding, LayerNorm, Linear
 from max.pipelines.nn.layer import Layer
 
 from .attention import Attention
@@ -70,8 +70,8 @@ class VisionModel(Layer):
     post_tile_positional_embedding: PrecomputedAspectRatioEmbedding
     patch_embedding: VisionConv2D
     class_embedding: TensorValueLike
-    layernorm_pre: LPLayerNorm
-    layernorm_post: LPLayerNorm
+    layernorm_pre: LayerNorm
+    layernorm_post: LayerNorm
     transformer: VisionEncoder
     global_transformer: VisionEncoder
     dtype: DType
@@ -534,7 +534,7 @@ def instantiate_vision_model(
         [hidden_size],
     )
 
-    layernorm_pre = LPLayerNorm(
+    layernorm_pre = LayerNorm(
         weights.vision_model.layernorm_pre.weight.allocate(
             dtype, [hidden_size]
         ),
@@ -544,7 +544,7 @@ def instantiate_vision_model(
         eps=norm_eps,
     )
 
-    layernorm_post = LPLayerNorm(
+    layernorm_post = LayerNorm(
         weights.vision_model.layernorm_post.weight.allocate(
             dtype, [hidden_size]
         ),
@@ -582,7 +582,7 @@ def instantiate_vision_model(
                         ),
                     ),
                 ),
-                input_layernorm=LPLayerNorm(
+                input_layernorm=LayerNorm(
                     curr_layer_weight.input_layernorm.weight.allocate(
                         dtype, [hidden_size]
                     ),
@@ -591,7 +591,7 @@ def instantiate_vision_model(
                     ),
                     eps=norm_eps,
                 ),
-                post_attention_layernorm=LPLayerNorm(
+                post_attention_layernorm=LayerNorm(
                     curr_layer_weight.post_attention_layernorm.weight.allocate(
                         dtype, [hidden_size]
                     ),
@@ -668,7 +668,7 @@ def instantiate_vision_model(
                         ),
                     ),
                 ),
-                input_layernorm=LPLayerNorm(
+                input_layernorm=LayerNorm(
                     curr_layer_weight.input_layernorm.weight.allocate(
                         dtype, [hidden_size]
                     ),
@@ -677,7 +677,7 @@ def instantiate_vision_model(
                     ),
                     eps=norm_eps,
                 ),
-                post_attention_layernorm=LPLayerNorm(
+                post_attention_layernorm=LayerNorm(
                     curr_layer_weight.post_attention_layernorm.weight.allocate(
                         dtype, [hidden_size]
                     ),

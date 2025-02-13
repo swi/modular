@@ -23,8 +23,8 @@ from max.pipelines.kv_cache import (
 )
 from max.pipelines.nn import (
     Embedding,
+    LayerNorm,
     Linear,
-    LPLayerNorm,
     RMSNorm,
     TransformerBlock,
 )
@@ -48,7 +48,7 @@ class Transformer(Layer):
     dim: int
     n_heads: int
     layers: list[TransformerBlock]
-    norm: Union[RMSNorm, LPLayerNorm]
+    norm: Union[RMSNorm, LayerNorm]
     output: Linear
     embedding: Embedding
     kv_params: KVCacheParams

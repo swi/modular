@@ -20,8 +20,8 @@ from max.graph import TensorValue, TensorValueLike, ops
 from max.pipelines.nn import (
     Conv1D,
     Embedding,
+    LayerNorm,
     Linear,
-    LPLayerNorm,
     Sequential,
 )
 from max.pipelines.nn.layer import Layer
@@ -111,8 +111,8 @@ class WhisperEncoderLayer(Layer):
 
     attention: WhisperSdpaAttention
     mlp: Sequential
-    attention_norm: LPLayerNorm
-    mlp_norm: LPLayerNorm
+    attention_norm: LayerNorm
+    mlp_norm: LayerNorm
 
     def __call__(
         self,
@@ -151,7 +151,7 @@ class WhisperEncoder(Layer):
     conv2: Conv1D
     embed_positions: Embedding
     layers: list[WhisperEncoderLayer]
-    norm: LPLayerNorm  # TODO: Is LayerNorm here not the same as nn.LayerNorm
+    norm: LayerNorm  # TODO: Is LayerNorm here not the same as nn.LayerNorm
 
     all_logits: bool = False
 

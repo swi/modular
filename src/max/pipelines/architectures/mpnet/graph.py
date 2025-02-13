@@ -20,7 +20,7 @@ from max.graph import Graph, TensorType, TensorValue, ops
 from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import Weights
 from max.pipelines import PipelineConfig
-from max.pipelines.nn import Embedding, Linear, LPLayerNorm, Sequential
+from max.pipelines.nn import Embedding, LayerNorm, Linear, Sequential
 from max.pipelines.nn.layer import Layer
 
 
@@ -57,7 +57,7 @@ class MPNetEmbeddings(Layer):
                 ],
             )
         )
-        self.layer_norm = LPLayerNorm(
+        self.layer_norm = LayerNorm(
             weight=weights.LayerNorm.weight.allocate(
                 pipeline_config.dtype,
                 [config.hidden_size],
@@ -207,7 +207,7 @@ class MPNetAttention(Layer):
     def __init__(self, pipeline_config: PipelineConfig, weights: Weights):
         config = pipeline_config.huggingface_config
         self.attn = MPNetSelfAttention(pipeline_config, weights.attn)
-        self.layer_norm = LPLayerNorm(
+        self.layer_norm = LayerNorm(
             weight=weights.LayerNorm.weight.allocate(
                 DType.float32, [config.hidden_size]
             ),
@@ -282,7 +282,7 @@ class MPNetOutput(Layer):
                 _quantization_encoding(pipeline_config),
             ),
         )
-        self.layer_norm = LPLayerNorm(
+        self.layer_norm = LayerNorm(
             weight=weights.LayerNorm.weight.allocate(
                 DType.float32, [config.hidden_size]
             ),
