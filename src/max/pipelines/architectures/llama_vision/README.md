@@ -30,7 +30,7 @@ This implementation is based on
 follows its convention of only attending to a single image at a time.
 
 Note that the Llama 3.2 1B and 3B text-only models use the `LlamaForCausalLM`
-architecture, which is covered in [our Llama 3.x pipeline](../llama3/).
+architecture, which is covered in [our Llama 3.x pipeline](../../llama3/).
 
 The default settings for this pipeline use the 11B set of pretrained weights in
 the `bfloat16` encoding.

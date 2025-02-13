@@ -18,8 +18,8 @@ architectures. These include:
 implemented using the MAX Graph API. This pipeline contains everything
 needed to run a self-hosted large language model in the `LlamaForCausalLM`
 family with state-of-the-art serving throughput.
-- [Mistral](mistral): Support for the `MistralForCausalLM` family of text
-completion models, by default using the Mistral NeMo 12B model. This pipeline
+- [Mistral](architectures/mistral): Support for the `MistralForCausalLM` family
+of text completion models, by default using the Mistral NeMo 12B model. This pipeline
 has been tuned for performance using the MAX Graph API.
 - [Replit Code](architectures/replit): Code generation via the
 Replit Code V1.5 3B model, implemented using the MAX Graph API.
