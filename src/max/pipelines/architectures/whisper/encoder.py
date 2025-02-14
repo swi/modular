@@ -183,22 +183,5 @@ class WhisperEncoder(Layer):
         # # A final layer normalization is applied to the encoder output
         normalized = self.norm(h)
 
-        if "input_row_offsets" in kwargs:
-            # Ragged inputs/activations
-            last_indices = kwargs["input_row_offsets"][1:] - 1
-            last_tokens = ops.gather(normalized, last_indices, axis=0)
-        else:
-            # Dense padded inputs/activations
-            valid_lengths = kwargs["valid_lengths"]
-            # TODO: Remove once `gather_nd` works with nonstatic last dims.
-            indices = ops.unsqueeze(valid_lengths - 1, -1)
-            last_tokens = ops.gather_nd(normalized, indices, batch_dims=1)
-
         # Always return float32 logits, no matter the activation type.
-        last_token_logits = ops.cast(last_tokens, DType.float32)
-
-        if self.all_logits:
-            all_logits = ops.cast(normalized, DType.float32)
-            return (last_token_logits, all_logits)
-
-        return (last_token_logits,)
+        return (ops.cast(normalized, DType.float32),)
