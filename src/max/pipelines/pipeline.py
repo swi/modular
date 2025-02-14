@@ -399,6 +399,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
         # Enable profiling if enabled.
         session.gpu_profiling(self._pipeline_config.gpu_profiling)
 
+        # Use experimental kernels if enabled by env var `USE_EXPERIMENTAL_KERNELS`.
+        session._use_experimental_kernels(
+            self._pipeline_config.use_experimental_kernels
+        )
+
         # Load model.
         self._pipeline_model = pipeline_model(
             pipeline_config=self._pipeline_config, session=session

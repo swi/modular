@@ -616,6 +616,10 @@ class PipelineConfig:
     gpu_profiling: str = os.environ.get("MODULAR_ENABLE_PROFILING", "false")
     """Whether to enable GPU profiling of the model."""
 
+    use_experimental_kernels: str = os.environ.get(
+        "USE_EXPERIMENTAL_KERNELS", "false"
+    )
+
     def __post_init__(self) -> None:
         if not self.huggingface_repo_id:
             msg = "huggingface_repo_id must be provided and must be a valid Hugging Face repo or local directory"
