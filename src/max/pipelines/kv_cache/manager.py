@@ -319,7 +319,7 @@ class KVCacheManager(ABC):
 
         new_start_pos = self.increment_cache_lengths_model(
             start_pos, prev_model_inputs.tokens
-        )
+        )[0]
         assert isinstance(new_start_pos, Tensor)
         return [(k_cache, v_cache, new_start_pos, new_start_pos)]
 

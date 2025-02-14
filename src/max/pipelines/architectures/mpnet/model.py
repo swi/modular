@@ -161,11 +161,6 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         self,
         session: InferenceSession,
     ) -> Model:
-        if self.pipeline_config.max_num_steps > 1:
-            msg = "MPNet does not support max_num_steps > 1. Overriding to max_num_steps=1."
-            logger.warning(msg)
-            self.pipeline_config.max_num_steps = 1
-
         # Read in weights.
         weights = self.pipeline_config.load_weights()
         self._weights = weights

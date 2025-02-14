@@ -547,8 +547,10 @@ class PipelineConfig:
     You can also force the engine to use a specific caching strategy: `naive` | `continuous` | `paged`.
     """
 
-    max_num_steps: int = 10
-    """The number of steps to run for multi-step scheduling."""
+    max_num_steps: int = -1
+    """The number of steps to run for multi-step scheduling. -1 specifies a default value based on
+    configuration and platform. Ignored for models which are not auto-regressive (e.g. embedding
+    models)."""
 
     pad_to_multiple_of: int = 2
     """Pad input tensors to be a multiple of value provided."""
@@ -692,10 +694,19 @@ class PipelineConfig:
 
         self.weight_path = weight_paths
 
+        # Set sensible defaults. These are platform-specific.
+        if self.max_num_steps < 0:
+            if (
+                self.enable_structured_output
+                or self.device_specs[0] == DeviceSpec.cpu()
+            ):
+                self.max_num_steps = 1
+            else:
+                self.max_num_steps = 10
+
         if self.max_num_steps > 1 and self.enable_structured_output:
-            msg = "max_num_steps > 1 not supported, when enable_structured_output = True. Overriding to max_num_steps=1."
-            logger.warning(msg)
-            self.max_num_steps = 1
+            msg = "max_num_steps > 1 not supported when enable_structured_output = True"
+            raise ValueError(msg)
 
         if self.enable_structured_output:
             if self.device_specs[0] == DeviceSpec.cpu():
