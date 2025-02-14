@@ -21,10 +21,11 @@ from max.pipelines import (
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 
-from .model import Llama3Model
+from .model import Llama3Model, Phi3Model
 from .safetensor_converter import (
     ExaoneSafetensorAdapter,
     LlamaSafetensorAdapter,
+    PhiSafetensorAdapter,
 )
 
 llama_arch = SupportedArchitecture(
@@ -94,4 +95,29 @@ exaone_arch = SupportedArchitecture(
     rope_type=RopeType.neox,
     default_weights_format=WeightsFormat.gguf,
     weight_converters={WeightsFormat.safetensors: ExaoneSafetensorAdapter},
+)
+
+
+phi3_arch = SupportedArchitecture(
+    name="Phi3ForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["microsoft/phi-4", "microsoft/Phi-3.5-mini-instruct"],
+    default_weights_format=WeightsFormat.gguf,
+    default_encoding=SupportedEncoding.bfloat16,
+    supported_encodings={
+        SupportedEncoding.float32: [
+            KVCacheStrategy.PAGED,
+            KVCacheStrategy.CONTINUOUS,
+            KVCacheStrategy.NAIVE,
+        ],
+        SupportedEncoding.bfloat16: [
+            KVCacheStrategy.PAGED,
+            KVCacheStrategy.CONTINUOUS,
+            KVCacheStrategy.NAIVE,
+        ],
+    },
+    pipeline_model=Phi3Model,
+    tokenizer=TextTokenizer,
+    rope_type=RopeType.normal,
+    weight_converters={WeightsFormat.safetensors: PhiSafetensorAdapter},
 )

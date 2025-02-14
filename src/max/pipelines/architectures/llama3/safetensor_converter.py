@@ -63,6 +63,18 @@ EXAONE_GGUF_TENSOR_MAPPING = {
     "output_norm": "transformer.ln_f",  # +
 }
 
+PHI_GGUF_TENSOR_MAPPING = {
+    "token_embd": "model.embed_tokens",
+    "blk": "model.layers",
+    "ffn_down": "mlp.down_proj",
+    "ffn_norm": "post_attention_layernorm",
+    "attn_norm": "input_layernorm",
+    "attn_qkv": "self_attn.qkv_proj",
+    "attn_output": "self_attn.o_proj",
+    "output.weight": "lm_head.weight",
+    "output_norm": "model.norm",
+}
+
 
 class SafetensorAdapter(WeightsConverter):
     @staticmethod
@@ -103,6 +115,14 @@ class LlamaSafetensorAdapter(SafetensorAdapter):
     def load_weights(weight_path: list[Path], **kwargs):
         return SafetensorAdapter._load_weights(
             LLAMA_GGUF_TENSOR_MAPPING, weight_path, **kwargs
+        )
+
+
+class PhiSafetensorAdapter(SafetensorAdapter):
+    @staticmethod
+    def load_weights(weight_path: list[Path], **kwargs):
+        return SafetensorAdapter._load_weights(
+            PHI_GGUF_TENSOR_MAPPING, weight_path, **kwargs
         )
 
 

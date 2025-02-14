@@ -11,6 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .arch import llama_arch
+from .arch import llama_arch, phi3_arch
 
-__all__ = ["llama_arch"]
+__all__ = ["llama_arch", "phi3_arch"]

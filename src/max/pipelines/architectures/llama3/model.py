@@ -634,3 +634,12 @@ class Llama3Model(LlamaModelBase):
         self, pipeline_config: PipelineConfig, session: InferenceSession
     ) -> None:
         super().__init__(pipeline_config, session)
+
+
+class Phi3Model(LlamaModelBase):
+    """Phi 3 pipeline model implementation."""
+
+    def __init__(
+        self, pipeline_config: PipelineConfig, session: InferenceSession
+    ) -> None:
+        super().__init__(pipeline_config, session)

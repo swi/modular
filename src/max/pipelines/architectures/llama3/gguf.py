@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import List, Optional, Union, cast
 
 import numpy as np
@@ -56,6 +57,7 @@ from max.pipelines.nn import (
     Transformer,
     TransformerBlock,
 )
+from max.pipelines.nn.layer import Layer
 
 
 def distribute_value(
@@ -88,6 +90,26 @@ def shard_row_value(
     ]
 
 
+@dataclass
+class Phi3MLP(Layer):
+    """
+    A multi-layer perceptron composed of two linear layers. Where the
+    gate_up_proj is a stacked linear layer which contains the up_proj and
+    gate_proj. This is used by the Phi3 models.
+    """
+
+    gate_up_proj: Linear
+    down_proj: Linear
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        up_states = self.gate_up_proj(x)
+
+        gate = up_states[:, : up_states.shape.static_dims[0] // 2]
+        up_states = up_states[:, up_states.shape.static_dims[0] // 2 :]
+
+        return self.down_proj(ops.silu(gate) * up_states)
+
+
 def feed_forward(
     dtype: DType,
     quantization_encoding: Optional[QuantizationEncoding],
@@ -95,33 +117,54 @@ def feed_forward(
     feed_forward_length: int,
     weights: Weights,
     quantization_config: Optional[QuantizationConfig],
-) -> MLP:
-    return MLP(
-        Linear.create(
-            dtype,
-            quantization_encoding,
-            feed_forward_length,
-            hidden_dim,
-            weights.ffn_gate,
-            quantization_config=quantization_config,
-        ),
-        Linear.create(
-            dtype,
-            quantization_encoding,
-            hidden_dim,
-            feed_forward_length,
-            weights.ffn_down,
-            quantization_config=quantization_config,
-        ),
-        Linear.create(
-            dtype,
-            quantization_encoding,
-            feed_forward_length,
-            hidden_dim,
-            weights.ffn_up,
-            quantization_config=quantization_config,
-        ),
-    )
+) -> MLP | Phi3MLP:
+    if weights.mlp.gate_up_proj.weight.exists():
+        # The phi3 models use a stacked MLP.
+        return Phi3MLP(
+            Linear.create(
+                dtype,
+                quantization_encoding,
+                2 * feed_forward_length,
+                hidden_dim,
+                weights.mlp.gate_up_proj,
+                quantization_config=quantization_config,
+            ),
+            Linear.create(
+                dtype,
+                quantization_encoding,
+                hidden_dim,
+                feed_forward_length,
+                weights.mlp.down_proj,
+                quantization_config=quantization_config,
+            ),
+        )
+    else:
+        return MLP(
+            Linear.create(
+                dtype,
+                quantization_encoding,
+                feed_forward_length,
+                hidden_dim,
+                weights.ffn_gate,
+                quantization_config=quantization_config,
+            ),
+            Linear.create(
+                dtype,
+                quantization_encoding,
+                hidden_dim,
+                feed_forward_length,
+                weights.ffn_down,
+                quantization_config=quantization_config,
+            ),
+            Linear.create(
+                dtype,
+                quantization_encoding,
+                feed_forward_length,
+                hidden_dim,
+                weights.ffn_up,
+                quantization_config=quantization_config,
+            ),
+        )
 
 
 def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
@@ -299,26 +342,38 @@ def _attention_opaque(
         // pipeline_config.huggingface_config.num_attention_heads
     ) * pipeline_config.huggingface_config.num_key_value_heads
 
-    wq = weights.attn_q.weight.allocate(
-        pipeline_config.dtype,
-        [
-            pipeline_config.huggingface_config.hidden_size,
-            pipeline_config.huggingface_config.hidden_size,
-        ],
-        pipeline_config.graph_quantization_encoding,
-    )
-    wk = weights.attn_k.weight.allocate(
-        pipeline_config.dtype,
-        [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
-        pipeline_config.graph_quantization_encoding,
-    )
-    wv = weights.attn_v.weight.allocate(
-        pipeline_config.dtype,
-        [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
-        pipeline_config.graph_quantization_encoding,
-    )
+    if weights.self_attn.qkv_proj.weight.exists():
+        # The phi3 models use a stacked qkv projection.
+        wqkv = weights.self_attn.qkv_proj.weight.allocate(
+            pipeline_config.dtype,
+            [
+                2 * kv_weight_dim
+                + pipeline_config.huggingface_config.hidden_size,
+                pipeline_config.huggingface_config.hidden_size,
+            ],
+            pipeline_config.graph_quantization_encoding,
+        )
+    else:
+        wq = weights.attn_q.weight.allocate(
+            pipeline_config.dtype,
+            [
+                pipeline_config.huggingface_config.hidden_size,
+                pipeline_config.huggingface_config.hidden_size,
+            ],
+            pipeline_config.graph_quantization_encoding,
+        )
+        wk = weights.attn_k.weight.allocate(
+            pipeline_config.dtype,
+            [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
+            pipeline_config.graph_quantization_encoding,
+        )
+        wv = weights.attn_v.weight.allocate(
+            pipeline_config.dtype,
+            [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
+            pipeline_config.graph_quantization_encoding,
+        )
 
-    wqkv = ops.concat((wq, wk, wv))
+        wqkv = ops.concat((wq, wk, wv))  # type: ignore
 
     return AttentionWithRope(
         n_heads=pipeline_config.huggingface_config.num_attention_heads,
@@ -454,9 +509,13 @@ def distributed_transformer_opaque(
             pipeline_config.weights_format == WeightsFormat.gguf
             and pipeline_config.rope_type == RopeType.normal
         )
+        partial_rotary_factor = getattr(
+            pipeline_config.huggingface_config, "partial_rotary_factor", 1
+        )
         rope = OptimizedRotaryEmbedding(
             dim=pipeline_config.huggingface_config.hidden_size,
-            n_heads=pipeline_config.huggingface_config.num_attention_heads,
+            n_heads=partial_rotary_factor
+            * pipeline_config.huggingface_config.num_attention_heads,
             theta=pipeline_config.huggingface_config.rope_theta,
             max_seq_len=max_seq_len,
             rope_scaling=rope_scaling,
@@ -580,9 +639,13 @@ def _transformer_opaque(
             pipeline_config.weights_format == WeightsFormat.gguf
             and pipeline_config.rope_type == RopeType.normal
         )
+        partial_rotary_factor = getattr(
+            pipeline_config.huggingface_config, "partial_rotary_factor", 1
+        )
         rope = OptimizedRotaryEmbedding(
             dim=pipeline_config.huggingface_config.hidden_size,
-            n_heads=pipeline_config.huggingface_config.num_attention_heads,
+            n_heads=partial_rotary_factor
+            * pipeline_config.huggingface_config.num_attention_heads,
             theta=pipeline_config.huggingface_config.rope_theta,
             max_seq_len=max_seq_len,
             rope_scaling=rope_scaling,
@@ -603,7 +666,7 @@ def _transformer_opaque(
                     weights.blk[i],
                     layer_idx=ops.constant(i, DType.uint32),
                 ),
-                mlp=feed_forward(
+                mlp=feed_forward(  # type: ignore
                     pipeline_config.dtype,
                     pipeline_config.graph_quantization_encoding,
                     pipeline_config.huggingface_config.hidden_size,
@@ -745,9 +808,13 @@ def transformer(
             pipeline_config.weights_format == WeightsFormat.gguf
             and pipeline_config.rope_type == RopeType.normal
         )
+        partial_rotary_factor = getattr(
+            pipeline_config.huggingface_config, "partial_rotary_factor", 1
+        )
         rope = RotaryEmbedding(
             dim=pipeline_config.huggingface_config.hidden_size,
-            n_heads=pipeline_config.huggingface_config.num_attention_heads,
+            n_heads=partial_rotary_factor
+            * pipeline_config.huggingface_config.num_attention_heads,
             theta=pipeline_config.huggingface_config.rope_theta,
             max_seq_len=max_seq_len,
             rope_scaling=rope_scaling,
@@ -763,7 +830,7 @@ def transformer(
                 attention=attention(
                     kv_params, pipeline_config, rope, weights.blk[i]
                 ),
-                mlp=feed_forward(
+                mlp=feed_forward(  # type: ignore
                     pipeline_config.dtype,
                     pipeline_config.graph_quantization_encoding,
                     pipeline_config.huggingface_config.hidden_size,
