@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import List, Sequence, cast
+from typing import List, Literal, Sequence, cast
 
 import numpy as np
 from max.driver import CPU, Device, Tensor
@@ -102,6 +102,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
     signal_buffers: list[Tensor]
     """Device buffers used for synchronization in communication collectives."""
+
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"]
+    """Normalization layer."""
 
     def __init__(
         self, pipeline_config: PipelineConfig, session: InferenceSession
@@ -420,6 +423,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                         self.pipeline_config
                     ),
                     kv_params=self.get_kv_params(self.pipeline_config),
+                    norm_method=self.norm_method,
                 )
                 tokens, input_row_offsets, *variadic_args = graph.inputs
 
@@ -462,6 +466,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                         self.pipeline_config
                     ),
                     kv_params=self.get_kv_params(self.pipeline_config),
+                    norm_method=self.norm_method,
                 )
                 assert isinstance(model, Transformer)
 
@@ -504,6 +509,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 weights=weights,
                 max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
                 kv_params=self.get_kv_params(self.pipeline_config),
+                norm_method=self.norm_method,
             )
             assert isinstance(model, NaiveTransformer)
 
@@ -630,6 +636,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
 class Llama3Model(LlamaModelBase):
     """Llama 3 pipeline model implementation."""
 
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    """Normalization layer."""
+
     def __init__(
         self, pipeline_config: PipelineConfig, session: InferenceSession
     ) -> None:
@@ -638,6 +647,20 @@ class Llama3Model(LlamaModelBase):
 
 class Phi3Model(LlamaModelBase):
     """Phi 3 pipeline model implementation."""
+
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "rms_norm"
+    """Normalization layer."""
+
+    def __init__(
+        self, pipeline_config: PipelineConfig, session: InferenceSession
+    ) -> None:
+        super().__init__(pipeline_config, session)
+
+
+class OlmoModel(LlamaModelBase):
+    """Olmo pipeline model implementation."""
+
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"] = "layer_norm"
 
     def __init__(
         self, pipeline_config: PipelineConfig, session: InferenceSession

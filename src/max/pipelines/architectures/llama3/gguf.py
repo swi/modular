@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Union, cast
+from typing import List, Literal, Optional, Union, cast
 
 import numpy as np
 from max.dtype import DType
@@ -171,16 +171,74 @@ def rms_norm(dims: int, eps: float, weights: Weights) -> RMSNorm:
     return RMSNorm(weights.weight.allocate(DType.float32, [dims]), eps)
 
 
-def distributed_rms_norm(
-    dims: int,
-    eps: float,
+@dataclass
+class LayerNorm(Layer):
+    """Layer normalization block."""
+
+    gamma: TensorValue
+    beta: TensorValue
+    eps: float = 1e-5
+
+    def __call__(self, input: TensorValue):
+        return ops.cast(
+            ops.layer_norm(
+                ops.cast(input, DType.float32),
+                gamma=ops.cast(self.gamma, DType.float32),
+                beta=ops.cast(self.beta, DType.float32),
+                epsilon=self.eps,
+            ),
+            input.dtype,
+        )
+
+
+def layer_norm(dims: int, eps: float = 1e-5) -> LayerNorm:
+    gamma = ops.constant(np.ones(dims), DType.float32)
+    beta = ops.constant(np.zeros(dims), DType.float32)
+    return LayerNorm(gamma, beta, eps=eps)
+
+
+def norm(
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"],
+    pipeline_config: PipelineConfig,
     weights: Weights,
+    weight_name: str,
+) -> RMSNorm | LayerNorm:
+    if norm_method == "rms_norm":
+        if pipeline_config.huggingface_config.model_type == "exaone":
+            rms_norm_eps = pipeline_config.huggingface_config.layer_norm_epsilon
+        else:
+            rms_norm_eps = pipeline_config.huggingface_config.rms_norm_eps
+
+        return rms_norm(
+            pipeline_config.huggingface_config.hidden_size,
+            rms_norm_eps,
+            weights[weight_name],
+        )
+    else:
+        return layer_norm(pipeline_config.huggingface_config.hidden_size)
+
+
+def distributed_norm(
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"],
+    pipeline_config: PipelineConfig,
+    weights: Weights,
+    weight_name: str,
     devices: List[DeviceRef],
 ) -> DistributedRMSNorm:
-    weights_ = TensorValue(weights.weight.allocate(DType.float32, [dims]))
+    assert norm_method == "rms_norm"
+
+    weights_ = TensorValue(
+        weights[weight_name].weight.allocate(
+            DType.float32,
+            [pipeline_config.huggingface_config.hidden_size],
+        )
+    )
     weights_devs = distribute_value(weights_, devices)
 
-    rms_norms = [RMSNorm(weights_dev, eps) for weights_dev in weights_devs]
+    rms_norms = [
+        RMSNorm(weights_dev, pipeline_config.huggingface_config.rms_norm_eps)
+        for weights_dev in weights_devs
+    ]
 
     return DistributedRMSNorm(rms_norms, devices)
 
@@ -319,6 +377,13 @@ def distributed_attention_opaque(
     return DistributedAttentionWithRope(attns, devices)
 
 
+def clamp(x: Weight, min: float, max: float) -> TensorValue:
+    return ops.min(
+        ops.max(x, ops.constant(min, x.dtype)),
+        ops.constant(max, x.dtype),
+    )
+
+
 def _attention_opaque(
     kv_params: KVCacheParams,
     pipeline_config: PipelineConfig,
@@ -372,6 +437,15 @@ def _attention_opaque(
             [kv_weight_dim, pipeline_config.huggingface_config.hidden_size],
             pipeline_config.graph_quantization_encoding,
         )
+
+        if (
+            getattr(pipeline_config.huggingface_config, "clip_qkv", None)
+            is not None
+        ):
+            clip_qkv = pipeline_config.huggingface_config.clip_qkv
+            wq = clamp(wq, min=-clip_qkv, max=clip_qkv)  # type: ignore
+            wk = clamp(wk, min=-clip_qkv, max=clip_qkv)  # type: ignore
+            wv = clamp(wv, min=-clip_qkv, max=clip_qkv)  # type: ignore
 
         wqkv = ops.concat((wq, wk, wv))  # type: ignore
 
@@ -494,6 +568,7 @@ def distributed_transformer_opaque(
     weights: Weights,
     max_seq_len: int,
     kv_params: KVCacheParams,
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"],
 ) -> DistributedTransformer:
     devices = [
         DeviceRef(spec.device_type, spec.id)
@@ -540,16 +615,18 @@ def distributed_transformer_opaque(
                     weights.blk[i],
                     devices=devices,
                 ),
-                attention_norm=distributed_rms_norm(
-                    pipeline_config.huggingface_config.hidden_size,
-                    pipeline_config.huggingface_config.rms_norm_eps,
-                    weights.blk[i].attn_norm,
+                attention_norm=distributed_norm(
+                    norm_method,
+                    pipeline_config,
+                    weights.blk[i],
+                    "attn_norm",
                     devices=devices,
                 ),
-                mlp_norm=distributed_rms_norm(
-                    pipeline_config.huggingface_config.hidden_size,
-                    pipeline_config.huggingface_config.rms_norm_eps,
-                    weights.blk[i].ffn_norm,
+                mlp_norm=distributed_norm(
+                    norm_method,
+                    pipeline_config,
+                    weights.blk[i],
+                    "ffn_norm",
                     devices=devices,
                 ),
                 devices=devices,
@@ -608,11 +685,7 @@ def distributed_transformer_opaque(
             dim=pipeline_config.huggingface_config.hidden_size,
             n_heads=pipeline_config.huggingface_config.num_attention_heads,
             layers=layers,
-            norm=rms_norm(
-                pipeline_config.huggingface_config.hidden_size,
-                pipeline_config.huggingface_config.rms_norm_eps,
-                weights.output_norm,
-            ),
+            norm=norm(norm_method, pipeline_config, weights, "output_norm"),  # type:ignore
             output=output,
             embedding=embedding_layer,
             kv_params=kv_params,
@@ -628,6 +701,7 @@ def _transformer_opaque(
     weights: Weights,
     max_seq_len: int,
     kv_params: KVCacheParams,
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"],
 ) -> Transformer:
     with graph:
         if weights.rope_freqs.weight.exists():
@@ -652,11 +726,6 @@ def _transformer_opaque(
             interleaved=interleaved_rope_weights,
         )
 
-        if pipeline_config.huggingface_config.model_type == "exaone":
-            rms_norm_eps = pipeline_config.huggingface_config.layer_norm_epsilon
-        else:
-            rms_norm_eps = pipeline_config.huggingface_config.rms_norm_eps
-
         layers = [
             TransformerBlock(
                 attention=_attention_opaque(
@@ -674,15 +743,11 @@ def _transformer_opaque(
                     weights.blk[i],
                     pipeline_config._quant_config,
                 ),
-                attention_norm=rms_norm(
-                    pipeline_config.huggingface_config.hidden_size,
-                    rms_norm_eps,
-                    weights.blk[i].attn_norm,
+                attention_norm=norm(  # type: ignore
+                    norm_method, pipeline_config, weights.blk[i], "attn_norm"
                 ),
-                mlp_norm=rms_norm(
-                    pipeline_config.huggingface_config.hidden_size,
-                    rms_norm_eps,
-                    weights.blk[i].ffn_norm,
+                mlp_norm=norm(  # type: ignore
+                    norm_method, pipeline_config, weights.blk[i], "ffn_norm"
                 ),
             )
             for i in range(pipeline_config.huggingface_config.num_hidden_layers)
@@ -719,11 +784,7 @@ def _transformer_opaque(
             dim=pipeline_config.huggingface_config.hidden_size,
             n_heads=pipeline_config.huggingface_config.num_attention_heads,
             layers=layers,
-            norm=rms_norm(
-                pipeline_config.huggingface_config.hidden_size,
-                rms_norm_eps,
-                weights.output_norm,
-            ),
+            norm=norm(norm_method, pipeline_config, weights, "output_norm"),  # type: ignore
             output=output,
             embedding=embedding_layer,
             kv_params=kv_params,
@@ -788,6 +849,7 @@ def transformer(
     weights: Weights,
     max_seq_len: int,
     kv_params: KVCacheParams,
+    norm_method: Literal["rms_norm"] | Literal["layer_norm"],
 ) -> Union[Transformer, NaiveTransformer]:
     if pipeline_config.cache_strategy.uses_opaque():
         return _transformer_opaque(
@@ -796,6 +858,7 @@ def transformer(
             weights=weights,
             max_seq_len=max_seq_len,
             kv_params=kv_params,
+            norm_method=norm_method,
         )
 
     with graph:
@@ -821,10 +884,6 @@ def transformer(
             interleaved=interleaved_rope_weights,
         )
 
-        if pipeline_config.huggingface_config.model_type == "exaone":
-            rms_norm_eps = pipeline_config.huggingface_config.layer_norm_epsilon
-        else:
-            rms_norm_eps = pipeline_config.huggingface_config.rms_norm_eps
         layers = [
             NaiveTransformerBlock(
                 attention=attention(
@@ -838,15 +897,11 @@ def transformer(
                     weights.blk[i],
                     pipeline_config._quant_config,
                 ),
-                attention_norm=rms_norm(
-                    pipeline_config.huggingface_config.hidden_size,
-                    rms_norm_eps,
-                    weights.blk[i].attn_norm,
+                attention_norm=norm(  # type: ignore
+                    norm_method, pipeline_config, weights.blk[i], "attn_norm"
                 ),
-                mlp_norm=rms_norm(
-                    pipeline_config.huggingface_config.hidden_size,
-                    rms_norm_eps,
-                    weights.blk[i].ffn_norm,
+                mlp_norm=norm(  # type: ignore
+                    norm_method, pipeline_config, weights.blk[i], "ffn_norm"
                 ),
             )
             for i in range(pipeline_config.huggingface_config.num_hidden_layers)
@@ -883,11 +938,7 @@ def transformer(
             dim=pipeline_config.huggingface_config.hidden_size,
             n_heads=pipeline_config.huggingface_config.num_attention_heads,
             layers=layers,
-            norm=rms_norm(
-                pipeline_config.huggingface_config.hidden_size,
-                rms_norm_eps,
-                weights.output_norm,
-            ),
+            norm=norm(norm_method, pipeline_config, weights, "output_norm"),  # type: ignore
             output=output,
             theta=pipeline_config.huggingface_config.rope_theta,
             embedding=embedding_layer,

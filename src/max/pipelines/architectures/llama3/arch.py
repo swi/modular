@@ -21,7 +21,7 @@ from max.pipelines import (
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 
-from .model import Llama3Model, Phi3Model
+from .model import Llama3Model, OlmoModel, Phi3Model
 from .safetensor_converter import (
     ExaoneSafetensorAdapter,
     LlamaSafetensorAdapter,
@@ -120,4 +120,29 @@ phi3_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,
     weight_converters={WeightsFormat.safetensors: PhiSafetensorAdapter},
+)
+
+
+olmoe_arch = SupportedArchitecture(
+    name="OlmoForCausalLM",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=["allenai/OLMo-1B-hf", "allenai/OLMo-1B-0724-hf"],
+    default_weights_format=WeightsFormat.gguf,
+    default_encoding=SupportedEncoding.float32,
+    supported_encodings={
+        SupportedEncoding.float32: [
+            KVCacheStrategy.PAGED,
+            KVCacheStrategy.CONTINUOUS,
+            KVCacheStrategy.NAIVE,
+        ],
+        SupportedEncoding.bfloat16: [
+            KVCacheStrategy.PAGED,
+            KVCacheStrategy.CONTINUOUS,
+            KVCacheStrategy.NAIVE,
+        ],
+    },
+    pipeline_model=OlmoModel,
+    tokenizer=TextTokenizer,
+    rope_type=RopeType.normal,
+    weight_converters={WeightsFormat.safetensors: LlamaSafetensorAdapter},
 )
