@@ -27,7 +27,7 @@ from .config import (
 from .device_options import DevicesOptionType
 from .encode import pipeline_encode
 from .generate import generate_text_for_pipeline, stream_text_to_console
-from .list import list_pipelines_to_console
+from .list import list_pipelines_to_console, list_pipelines_to_json
 from .metrics import TextGenerationMetrics
 from .serve import serve_pipeline
 
@@ -40,6 +40,7 @@ __all__ = [
     "generate_text_for_pipeline",
     "stream_text_to_console",
     "list_pipelines_to_console",
+    "list_pipelines_to_json",
     "pipeline_encode",
     "get_default",
     "get_field_type",

@@ -21,6 +21,7 @@ import click
 from max.entrypoints.cli import (
     generate_text_for_pipeline,
     list_pipelines_to_console,
+    list_pipelines_to_json,
     pipeline_config_options,
     pipeline_encode,
     serve_pipeline,
@@ -212,8 +213,18 @@ def cli_warm_cache(**config_kwargs) -> None:
 
 
 @main.command(name="list")
-def cli_list():
-    list_pipelines_to_console()
+@click.option(
+    "--json",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help="Print the list of pipelines options in JSON format.",
+)
+def cli_list(json):
+    if json:
+        list_pipelines_to_json()
+    else:
+        list_pipelines_to_console()
 
 
 if __name__ == "__main__":

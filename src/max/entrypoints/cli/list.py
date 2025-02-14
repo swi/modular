@@ -19,11 +19,14 @@
 
 """Utilities for exploring supported pipelines."""
 
+import json
+
 from max.pipelines import PIPELINE_REGISTRY
 
 
 def list_pipelines_to_console():
     print()
+    # Print human readable format
     for arch in PIPELINE_REGISTRY.architectures.values():
         print()
         print(f"    Architecture: {arch.name}")
@@ -42,3 +45,20 @@ def list_pipelines_to_console():
             )
 
     print()
+
+
+def list_pipelines_to_json():
+    """Print the list of pipelines architecture options in JSON format."""
+    architectures = {}
+    for arch in PIPELINE_REGISTRY.architectures.values():
+        architectures[arch.name] = {
+            "example_repo_ids": list(arch.example_repo_ids),
+            "supported_encodings": [
+                {
+                    "encoding": encoding,
+                    "supported_kv_cache_strategies": list(strategies),
+                }
+                for encoding, strategies in arch.supported_encodings.items()
+            ],
+        }
+    print(json.dumps({"architectures": architectures}, indent=2))
