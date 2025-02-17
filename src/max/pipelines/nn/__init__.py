@@ -24,7 +24,7 @@ from .attention import (
     DistributedAttentionWithRope,
     NaiveAttentionWithRope,
 )
-from .conv import Conv1D, Conv2D
+from .conv import Conv1D, Conv2D, Conv3D
 from .embedding import Embedding, EmbeddingV2
 from .kernels import MHAMaskVariant
 from .layer import Layer, LayerV2
@@ -57,6 +57,7 @@ __all__ = [
     "NaiveAttentionWithRope",
     "Conv1D",
     "Conv2D",
+    "Conv3D",
     "Embedding",
     "EmbeddingV2",
     "Linear",

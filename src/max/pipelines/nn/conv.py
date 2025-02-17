@@ -111,3 +111,67 @@ class Conv1D(Layer):
             )
         # Reshape [batch_size, height=1, new_length, out_channels] to [batch_size, new_length, out_channels].
         return ops.squeeze(output, 1)
+
+
+@dataclass
+class Conv3D(Layer):
+    """A 3D convolution over an input signal composed of several input
+    planes.
+    """
+
+    filter: TensorValueLike  # [depth, height, width, in_channels / num_groups, out_channels]
+    bias: Optional[TensorValueLike] = None  # [out_channels]
+
+    stride: Union[int, Tuple[int, int, int]] = (1, 1, 1)
+    padding: Union[int, Tuple[int, int, int, int, int, int]] = (
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
+    dilation: Union[int, Tuple[int, int, int]] = (1, 1, 1)
+    groups: int = 1
+
+    def __call__(self, x: TensorValueLike) -> TensorValue:
+        """
+        Args:
+            x: a tensor of shape [batch_size, length, in_channels]
+
+        Returns:
+            a tensor of shape [batch_size, new_length, out_channels]
+            new_length = ((length + 2 * padding - (kernel_size - 1) - 1) / stride) + 1
+        """
+        # These need to be casted as the underlying ops.conv2d call
+        # expects them to only be tuple types.
+        if isinstance(self.stride, int):
+            self.stride = (self.stride, self.stride, self.stride)
+
+        if isinstance(self.padding, int):
+            self.padding = (
+                self.padding,
+                self.padding,
+                self.padding,
+                self.padding,
+                self.padding,
+                self.padding,
+            )
+
+        if isinstance(self.dilation, int):
+            self.dilation = (self.dilation, self.dilation, self.dilation)
+
+        if (
+            isinstance(self.filter, Weight)
+            and self.filter.quantization_encoding is not None
+        ):
+            raise ValueError("Conv3D not implemented with weight quantization.")
+        return ops.conv3d(
+            x,
+            self.filter,
+            self.stride,
+            self.dilation,
+            self.padding,
+            self.groups,
+            self.bias,
+        )
