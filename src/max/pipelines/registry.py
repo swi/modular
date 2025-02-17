@@ -933,7 +933,7 @@ class PipelineRegistry:
             # https://linear.app/modularml/issue/AIPIPE-197/add-support-for-mistral-7b-instruct-v03
             # TODO: remove this pipeline_model.__name__ check
             if (
-                arch.pipeline_model.__name__ == "MistralModel"
+                arch.pipeline_model.__name__ in ("MistralModel", "Phi3Model")
                 and arch.tokenizer is TextTokenizer
             ):
                 text_tokenizer = cast(Type[TextTokenizer], arch.tokenizer)
