@@ -38,7 +38,6 @@ class SimpleTrie:
 
     def insert(self, s: Sequence[Key]):
         """Inserts a sequence into the trie."""
-        print(f"Inserting {s} into trie")
         curr = self.root
         for ch in s:
             if ch not in curr.children:
