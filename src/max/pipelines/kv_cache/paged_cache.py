@@ -26,9 +26,11 @@ from typing import Any, Dict, Iterator, Optional
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import (
+    BufferType,
     DeviceRef,
+    Graph,
     TensorType,
     TensorValue,
     _OpaqueType,
@@ -137,6 +139,45 @@ class FetchPagedKVCacheCollection:
         )
 
 
+def construct_cow_strided_memcpy_graph(
+    block_shape: list[int | str], dtype: DType, devices: list[Device]
+) -> Graph:
+    """
+    Returns a graph for performing COW operations on the KV cache.
+    """
+
+    assert len(block_shape) == 6
+    device_refs = [DeviceRef(device.label, device.id) for device in devices]
+    blocks_ty = [
+        BufferType(dtype, shape=block_shape, device=device_ref)
+        for device_ref in device_refs
+    ]
+    block_src_idx_ty = TensorType(DType.uint32, shape=[])
+    block_dst_idx_ty = TensorType(DType.uint32, shape=[])
+    num_tokens_ty = TensorType(DType.uint32, shape=[])
+
+    with Graph(
+        "mo.kv_collection_cow_strided_memcpy.paged",
+        input_types=[
+            block_dst_idx_ty,
+            block_src_idx_ty,
+            num_tokens_ty,
+            *blocks_ty,
+        ],
+        output_types=[],
+    ) as graph:
+        block_dst_idx, block_src_idx, num_tokens, *all_blocks = graph.inputs
+        for blocks in all_blocks:
+            ops.inplace_custom(
+                "mo.kv_collection_cow_strided_memcpy.paged",
+                values=[blocks, block_dst_idx, block_src_idx, num_tokens],
+                out_types=[],
+            )
+        graph.output()
+
+    return graph
+
+
 @dataclass
 class _PagedCacheMetadata:
     # Committed blocks are part of the radix trie and can be shared by many sequences.
@@ -237,15 +278,16 @@ class PagedKVCacheManager(KVCacheManager):
 
         # Initialize the blocks for each device.
         self.blocks: list[Tensor] = []
+        blocks_shape: list[int] = self._block_shape(  # type: ignore
+            self.params,
+            self.total_num_pages,
+            self.page_size,
+            self.num_layers,
+        )
         for device in self.devices:
             self.blocks.append(
                 Tensor.zeros(
-                    self._block_shape(
-                        self.params,
-                        self.total_num_pages,
-                        self.page_size,
-                        self.num_layers,
-                    ),
+                    blocks_shape,
                     self.params.dtype,
                     device=device,
                 )
@@ -255,8 +297,25 @@ class PagedKVCacheManager(KVCacheManager):
 
         # Initialize the radix trie if prefix caching is enabled.
         self.radix_trie: Optional[RadixTrie] = None
+        self.cow_strided_memcpy_graph: Optional[Model] = None
         if params.enable_prefix_caching:
             self.radix_trie = RadixTrie(page_size=self.page_size)
+            # Load single op graph for performing memory transfers needed for COW
+            if self.page_size > 1:
+                block_shape_parameterized = self._block_shape(
+                    params,
+                    self.total_num_pages,
+                    self.page_size,
+                    self.num_layers,
+                    is_total_num_pages_parameterized=True,
+                )
+                self.cow_strided_memcpy_graph = session.load(
+                    construct_cow_strided_memcpy_graph(
+                        block_shape_parameterized,
+                        params.dtype,
+                        devices,
+                    ),
+                )
         self.ce_all_tokens = 0
         self.ce_cache_hit_tokens = 0
 
@@ -371,7 +430,8 @@ class PagedKVCacheManager(KVCacheManager):
         total_num_pages: int,
         page_size: int,
         num_layers: int,
-    ) -> list[int]:
+        is_total_num_pages_parameterized: bool = False,
+    ) -> list[int | str]:
         # split k and v caches across a single dim
         # 0 = key
         # 1 = value
@@ -379,7 +439,9 @@ class PagedKVCacheManager(KVCacheManager):
         return [
             num_layers,
             kv_dim,
-            total_num_pages,
+            "total_num_pages"
+            if is_total_num_pages_parameterized
+            else total_num_pages,
             page_size,
             params.n_kv_heads_per_device,
             params.head_dim,
@@ -690,14 +752,12 @@ class PagedKVCacheManager(KVCacheManager):
                 # kv_blocks
                 TensorType(
                     self.params.dtype,
-                    shape=[
-                        self.num_layers,
-                        2,
-                        "total_num_pages",
+                    shape=self._block_shape(
+                        self.params,
+                        self.total_num_pages,
                         self.page_size,
-                        self.params.n_kv_heads_per_device,
-                        self.params.head_dim,
-                    ],
+                        self.num_layers,
+                    ),
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
                 # cache_lengths
