@@ -11,9 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 import numpy as np
+
+from .simple_trie import SimpleTrie
 
 TokenId = Any
 BlockId = Any
@@ -77,6 +79,9 @@ class TrieNode:
         # Sequences that are using the blocks owned by this trie node
         # The node can only be evicted if self.active_seqs is empty
         self.active_seqs: Set[SeqId] = set()
+        # A trie containing only the keys in the self.children dict where each
+        # key is length exactly page_size
+        self.key_trie = SimpleTrie()
 
     def is_leaf(self) -> bool:
         """Returns true if the node is a leaf node."""
@@ -89,6 +94,18 @@ class TrieNode:
     def is_evictable(self) -> bool:
         """Returns true if the node is evictable."""
         return not self.is_root() and len(self.active_seqs) == 0
+
+    def find_block_with_largest_common_prefix(
+        self, target: Sequence[TokenId]
+    ) -> Optional[Tuple[BlockId, int]]:
+        """Returns any block in the trie that has the given prefix."""
+        res = self.key_trie.find_string_with_largest_common_prefix(target)
+        if res is None:
+            return None
+        key, prefix_len = res
+        assert prefix_len <= len(target)
+        assert target[:prefix_len] == key[:prefix_len]
+        return self.children[tuple(key)].blocks[0], prefix_len
 
 
 class LRUCache(OrderedDict):
@@ -190,6 +207,7 @@ class RadixTrie:
                 curr.tokens = tokens
                 curr.blocks = blocks
                 prev.children[key] = curr
+                prev.key_trie.insert(key)
                 assert curr.is_evictable() and curr.is_leaf()
                 self.evictable_blocks.update(blocks)
                 self.lru_cache[curr.node_id] = curr
@@ -283,8 +301,6 @@ class RadixTrie:
             msg = "Match failed: Attempted to match 0 tokens in trie. Please provide at least one token to match."
             raise ValueError(msg)
 
-        # AIPIPE-323: We should support partial block matches
-        # truncate tokens to be divisible by page size
         tokens = tokens[: len(tokens) // self.page_size * self.page_size]
 
         blocks: List[BlockId] = []
@@ -330,8 +346,10 @@ class RadixTrie:
         assert len(parent.tokens) > 0
         parent_key = _token_to_key(parent.tokens, self.page_size)
         parent.parent.children[parent_key] = parent
+        parent.parent.key_trie.insert(parent_key)
         child_key = _token_to_key(child.tokens, self.page_size)
         parent.children = {child_key: child}
+        parent.key_trie.insert(child_key)
         self.lru_cache[child.node_id] = child
         child.parent = parent
 
@@ -409,6 +427,7 @@ class RadixTrie:
                 parent = leaf.parent
                 assert parent is not None
                 del parent.children[key]
+                del parent.key_trie[key]
 
         self.evictable_blocks.difference_update(evicted_blocks)
         self.all_blocks.difference_update(evicted_blocks)
