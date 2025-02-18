@@ -33,6 +33,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Tuple, Union
 import aiohttp
 import huggingface_hub.constants
 import numpy as np
+from modelscope import snapshot_download
 from tqdm.asyncio import tqdm
 from transformers import (
     AutoTokenizer,
@@ -237,7 +238,6 @@ async def async_request_openai_chat_completions(
     )
 
     async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        assert not request_func_input.use_beam_search  # type: ignore
         payload = {
             "model": request_func_input.model,
             "messages": [
@@ -325,8 +325,6 @@ def remove_prefix(text: str, prefix: str) -> str:
 
 def get_model(pretrained_model_name_or_path: str) -> str:
     if os.getenv("VLLM_USE_MODELSCOPE", "False").lower() == "true":
-        from modelscope import snapshot_download  # type: ignore
-
         model_path = snapshot_download(
             model_id=pretrained_model_name_or_path,
             local_files_only=huggingface_hub.constants.HF_HUB_OFFLINE,
@@ -933,35 +931,31 @@ def main(args: argparse.Namespace):
         )
 
     elif args.dataset_name == "sonnet":
+        # Sample sonnet requests with common parameters
+        sonnet_requests = sample_sonnet_requests(
+            dataset_path=args.dataset_path,
+            num_requests=args.num_prompts,
+            input_len=args.sonnet_input_len,
+            output_len=args.sonnet_output_len,
+            prefix_len=args.sonnet_prefix_len,
+            tokenizer=tokenizer,
+        )
+
         # Do not format the prompt, pass to message directly
         if args.backend == "openai-chat":
-            input_requests = sample_sonnet_requests(  # type: ignore
-                dataset_path=args.dataset_path,
-                num_requests=args.num_prompts,
-                input_len=args.sonnet_input_len,
-                output_len=args.sonnet_output_len,
-                prefix_len=args.sonnet_prefix_len,
-                tokenizer=tokenizer,
-            )
-            input_requests = [  # type: ignore
+            # For chat API, use raw prompt without formatting
+            input_requests = [
                 (prompt, prompt_len, output_len)
-                for prompt, prompt_formatted, prompt_len, output_len in input_requests
+                for prompt, _, prompt_len, output_len in sonnet_requests
             ]
         else:
+            # For non-chat API, ensure model has chat template and use formatted prompt
             assert tokenizer.chat_template or tokenizer.default_chat_template, (
                 "Tokenizer/model must have chat template for sonnet dataset."
             )
-            input_requests = sample_sonnet_requests(  # type: ignore
-                dataset_path=args.dataset_path,
-                num_requests=args.num_prompts,
-                input_len=args.sonnet_input_len,
-                output_len=args.sonnet_output_len,
-                prefix_len=args.sonnet_prefix_len,
-                tokenizer=tokenizer,
-            )
-            input_requests = [  # type: ignore
+            input_requests = [
                 (prompt_formatted, prompt_len, output_len)
-                for prompt, prompt_formatted, prompt_len, output_len in input_requests
+                for _, prompt_formatted, prompt_len, output_len in sonnet_requests
             ]
 
     elif args.dataset_name == "random":

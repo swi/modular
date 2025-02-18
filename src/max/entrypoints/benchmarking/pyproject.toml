@@ -4,6 +4,7 @@ dependencies = [
     "aiohttp>=3.11.10,<4",
     "huggingface-hub>=0.26.5,<0.27",
     "hf-transfer>=0.1.8,<0.2",
+    "modelscope",
     "numpy>=2.2.0,<3",
     "tqdm>=4.67.1,<5",
     "transformers>=4.47.0,<5",
