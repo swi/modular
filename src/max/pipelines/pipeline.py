@@ -383,7 +383,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         self.vocab_size = None
         if pipeline_config.enable_structured_output:
             tokenizer = AutoTokenizer.from_pretrained(
-                pipeline_config.huggingface_repo_id
+                pipeline_config.model_path
             )
             self.vocab_size = len(tokenizer)
             tokenizer_info = xgr.TokenizerInfo.from_huggingface(

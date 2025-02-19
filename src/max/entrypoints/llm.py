@@ -114,7 +114,7 @@ async def _async_worker(
         pipeline_config
     )
     batch_config = batch_config_from_pipeline_config(pipeline_config)
-    model_name = pipeline_config.huggingface_repo_id
+    model_name = pipeline_config.model_path
 
     async with (
         # Start the model worker process.

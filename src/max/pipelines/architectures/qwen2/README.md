@@ -92,7 +92,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
    via the `serve` command:
 
    ```shell
-   magic run serve --huggingface-repo-id=Qwen/Qwen2.5-7B-Instruct
+   magic run serve --model-path=Qwen/Qwen2.5-7B-Instruct
    ```
 
 ## Options

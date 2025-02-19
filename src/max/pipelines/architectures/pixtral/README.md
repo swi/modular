@@ -72,7 +72,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
    architecture. For example:
 
    ```shell
-   magic run serve --huggingface-repo-id mistral-community/pixtral-12b
+   magic run serve --model-path mistral-community/pixtral-12b
    ```
 
    A request can be submitted via a cURL command.
@@ -98,7 +98,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
 The following command-line options are available to customize operation of the
 pipeline:
 
-- `--huggingface-repo-id`: Specify the repository ID of a Hugging Face model
+- `--model-path`: Specify the repository ID of a Hugging Face model
   repository to use. This is used to load tokenizers, architectures and model
   weights.
 - `--force-download`: Specify whether to force a download of configuration

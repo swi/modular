@@ -93,7 +93,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
    via the `serve` command:
 
    ```shell
-   magic run serve --huggingface-repo-id=mistralai/Ministral-8B-Instruct-2410
+   magic run serve --model-path=mistralai/Ministral-8B-Instruct-2410
    ```
 
 ## Options

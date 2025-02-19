@@ -62,9 +62,9 @@ tool.
 3. Now run one of the text completion demos with any of following commands:
 
    ```shell
-   magic run generate --huggingface-repo-id=modularai/llama-3.1 --prompt "Why is the sky blue?"
-   magic run generate --huggingface-repo-id=modularai/replit-code-1.5 --prompt "def fibonacci(n):"
-   magic run generate --huggingface-repo-id=mistralai/Mistral-Nemo-Instruct-2407 --prompt "Why is the sky blue?"
+   magic run generate --model-path=modularai/llama-3.1 --prompt "Why is the sky blue?"
+   magic run generate --model-path=modularai/replit-code-1.5 --prompt "def fibonacci(n):"
+   magic run generate --model-path=mistralai/Mistral-Nemo-Instruct-2407 --prompt "Why is the sky blue?"
    ```
 
 4. Host a chat completion endpoint via MAX Serve.
@@ -77,7 +77,7 @@ tool.
    command:
 
    ```shell
-   magic run serve --huggingface-repo-id=modularai/llama-3.1
+   magic run serve --model-path=modularai/llama-3.1
    ```
 
    A request can then be submitted via a cURL command.

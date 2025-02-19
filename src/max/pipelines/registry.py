@@ -180,7 +180,7 @@ class PipelineRegistry:
             pipeline_config.engine = PipelineEngine.HUGGINGFACE
             return pipeline_config
 
-        # The remainder of this function, assumes we have both a valid huggingface_repo_id,
+        # The remainder of this function, assumes we have both a valid model_path,
         # and a SupportedArchitecture. We should then validate the details of the existing architecture
         # and fallback to HuggingFace if needed.
 
@@ -355,7 +355,7 @@ class PipelineRegistry:
             pipeline_config.cache_strategy = supported_strategy
 
         # Assume at this point, an architecture,
-        # a huggingface_repo_id and weight_paths are available.
+        # a model_path and weight_paths are available.
         assert pipeline_config.weight_path, "weight_path must be provided."
         for path in pipeline_config.weight_path:
             # Check if file exists locally.
@@ -364,7 +364,7 @@ class PipelineRegistry:
                 if not huggingface_weights_repo.file_exists(str(path)):
                     msg = (
                         f"weight_path: '{path}' does not exist locally, and"
-                        f" '{pipeline_config.huggingface_repo_id}/{path}' does"
+                        f" '{pipeline_config.model_path}/{path}' does"
                         " not exist on HuggingFace."
                     )
                     raise ValueError(msg)
@@ -870,7 +870,7 @@ class PipelineRegistry:
             engine:                 {pipeline_config.engine}
             architecture:           {pipeline_config.architecture}
             devices:                {devices_str}
-            huggingface_repo_id:    {pipeline_config.huggingface_repo_id}{weights_repo_str}
+            model_path:             {pipeline_config.model_path}{weights_repo_str}
             quantization_encoding:  {pipeline_config.quantization_encoding}
             cache_strategy:         {pipeline_config.cache_strategy}
             weight_path:            [
@@ -938,7 +938,7 @@ class PipelineRegistry:
             ):
                 text_tokenizer = cast(Type[TextTokenizer], arch.tokenizer)
                 tokenizer = text_tokenizer(
-                    pipeline_config.huggingface_repo_id,
+                    pipeline_config.model_path,
                     max_length,
                     pipeline_config.max_new_tokens,
                     pipeline_config.trust_remote_code,
@@ -946,7 +946,7 @@ class PipelineRegistry:
                 )
             else:
                 tokenizer = arch.tokenizer(
-                    pipeline_config.huggingface_repo_id,
+                    pipeline_config.model_path,
                     max_length,
                     pipeline_config.max_new_tokens,
                     pipeline_config.trust_remote_code,
@@ -969,7 +969,7 @@ class PipelineRegistry:
 
             # Generalized pipeline
             tokenizer = TextTokenizer(
-                pipeline_config.huggingface_repo_id,
+                pipeline_config.model_path,
                 pipeline_config.max_length,
                 pipeline_config.max_new_tokens,
                 pipeline_config.trust_remote_code,

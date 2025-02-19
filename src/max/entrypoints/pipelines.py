@@ -74,7 +74,7 @@ def common_server_options(func):
     @click.option(
         "--model-name",
         type=str,
-        help="Deprecated, please use `huggingface_repo_id` instead. Optional model alias for serving the model.",
+        help="Deprecated, please use `model_path` instead. Optional model alias for serving the model.",
     )
     @click.option(
         "--sim-failure",
@@ -142,7 +142,7 @@ def cli_serve(
     help="# of warmup iterations to run before the final timed run.",
 )
 def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
-    # Replit huggingface_repo_ids are kinda broken due to transformers
+    # Replit model_paths are kinda broken due to transformers
     # version mismatch. We manually update trust_remote_code to True
     # because the modularai version does not have the custom Python code needed
     # Without this, we get:
@@ -151,7 +151,7 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     # Another reason why we override this flag here is because at PipelineConfig
     # instantiation below, we'll call AutoConfig.from_pretrained, which will
     # trigger the error above if not set to True.
-    if "replit" in config_kwargs["huggingface_repo_id"]:
+    if "replit" in config_kwargs["model_path"]:
         config_kwargs["trust_remote_code"] = True
 
     if config_kwargs["max_new_tokens"] == -1:

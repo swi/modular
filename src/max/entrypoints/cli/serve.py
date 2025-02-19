@@ -60,16 +60,11 @@ def serve_pipeline(
     # TODO: This is a workaround to support embeddings generation until the
     # changes to tie pipelines to tasks is complete. This will be removed.
     pipeline_task = PipelineTask.TEXT_GENERATION
-    if (
-        pipeline_config.huggingface_repo_id
-        == "sentence-transformers/all-mpnet-base-v2"
-    ):
+    if pipeline_config.model_path == "sentence-transformers/all-mpnet-base-v2":
         pipeline_task = PipelineTask.EMBEDDINGS_GENERATION
 
     if performance_fake == "none":
-        logger.info(
-            f"Starting server using {pipeline_config.huggingface_repo_id}"
-        )
+        logger.info(f"Starting server using {pipeline_config.model_path}")
         # Load tokenizer and pipeline from PIPELINE_REGISTRY.
         tokenizer, pipeline_factory = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
@@ -80,7 +75,7 @@ def serve_pipeline(
             f"Starting server using performance fake {performance_fake}."
         )
         tokenizer = PerformanceFakingPipelineTokenizer(
-            AutoTokenizer.from_pretrained(pipeline_config.huggingface_repo_id)
+            AutoTokenizer.from_pretrained(pipeline_config.model_path)
         )
         pipeline_factory = functools.partial(
             get_performance_fake,
@@ -97,9 +92,9 @@ def serve_pipeline(
         batch_timeout=batch_timeout,
     )
 
-    # If explicit model name is not provided, set to huggingface_repo_id.
+    # If explicit model name is not provided, set to model_path.
     if model_name is None:
-        model_name = pipeline_config.huggingface_repo_id
+        model_name = pipeline_config.model_path
         assert model_name is not None
 
     pipeline_settings = ServingTokenGeneratorSettings(

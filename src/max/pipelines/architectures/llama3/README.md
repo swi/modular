@@ -61,7 +61,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
 3. Now run the Llama 3.1 text completion demo with the following command:
 
    ```shell
-   magic run generate --huggingface-repo-id="modularai/Llama-3.1-8B-Instruct-GGUF" --prompt "I believe the meaning of life is"
+   magic run generate --model-path="modularai/Llama-3.1-8B-Instruct-GGUF" --prompt "I believe the meaning of life is"
    ```
 
 4. Host a chat completion endpoint via MAX Serve.
@@ -73,7 +73,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
    For example:
 
    ```shell
-   magic run serve --huggingface-repo-id="modularai/Llama-3.1-8B-Instruct-GGUF"
+   magic run serve --model-path="modularai/Llama-3.1-8B-Instruct-GGUF"
    ```
 
    A request can be submitted via a cURL command.
@@ -96,7 +96,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
    via the `serve` command:
 
    ```shell
-   magic run serve --huggingface-repo-id=meta-llama/Llama-3.2-1B
+   magic run serve --model-path=meta-llama/Llama-3.2-1B
    ```
 
 ## Options

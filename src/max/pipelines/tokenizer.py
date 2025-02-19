@@ -144,18 +144,18 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
 
     def __init__(
         self,
-        huggingface_repo_id: str,
+        model_path: str,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
     ):
-        self.huggingface_repo_id = huggingface_repo_id
+        self.model_path = model_path
         self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
         self.delegate = AutoTokenizer.from_pretrained(
-            huggingface_repo_id,
+            model_path,
             trust_remote_code=trust_remote_code,
             # If `max_length` is None, the max length will be taken
             # from the HuggingFace tokenizer_config.
@@ -187,7 +187,7 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
         except Exception:
             msg = (
                 "apply_chat_template failed for"
-                f" TextTokenizer({self.huggingface_repo_id})"
+                f" TextTokenizer({self.model_path})"
             )
             logger.warning(msg)
             return "\n".join([str(message["content"]) for message in messages])
@@ -321,24 +321,24 @@ class TextAndVisionTokenizer(
 
     def __init__(
         self,
-        huggingface_repo_id: str,
+        model_path: str,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
     ):
-        self.huggingface_repo_id = huggingface_repo_id
+        self.model_path = model_path
         self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
         self.delegate = AutoTokenizer.from_pretrained(
-            huggingface_repo_id,
+            model_path,
             trust_remote_code=trust_remote_code,
             # If `max_length` is None, the max length will be taken
             # from the HuggingFace tokenizer_config.
             model_max_length=max_length,
         )
         self.processor = AutoProcessor.from_pretrained(
-            huggingface_repo_id,
+            model_path,
             trust_remote_code=trust_remote_code,
         )
 
@@ -365,10 +365,7 @@ class TextAndVisionTokenizer(
         self, messages: list[TokenGeneratorRequestMessage]
     ) -> str:
         # TODO: Refactor this.
-        if (
-            self.huggingface_repo_id
-            == "meta-llama/Llama-3.2-11B-Vision-Instruct"
-        ):
+        if self.model_path == "meta-llama/Llama-3.2-11B-Vision-Instruct":
             messages = self._wrap_str_message_content(messages)
         try:
             templated_message = self.processor.apply_chat_template(

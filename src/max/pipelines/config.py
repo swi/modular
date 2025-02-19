@@ -198,7 +198,7 @@ class HuggingFaceRepo:
                 self.repo_type = RepoType.online
 
         if self.repo_type == RepoType.online and not repo_exists(self.repo_id):
-            msg = f"huggingface_repo_id: {self.repo_id} does not exist"
+            msg = f"model_path: {self.repo_id} does not exist"
             raise ValueError(msg)
 
     def __str__(self) -> str:
@@ -500,11 +500,14 @@ class PipelineConfig:
     # When adding a new config parameter here, please remember to add a
     # description to the `help()` method below
 
-    # NOTE: huggingface_repo_id is made a str of "" by default, to avoid having
+    # NOTE: model_path is made a str of "" by default, to avoid having
     # it be Optional to check for None and then littering the codebase with
     # asserts just to keep mypy happy.
-    huggingface_repo_id: str = ""
+    model_path: str = ""
     """repo_id of a Hugging Face model repository to use."""
+
+    huggingface_repo_id: str = ""
+    """DEPRECATED: repo_id of a Hugging Face model repository to use. Use `model_path` instead."""
 
     engine: Optional[PipelineEngine] = None
     """Engine backend to use for serving, 'max' for the max engine, or 'huggingface' as fallback option for improved model coverage."""
@@ -608,7 +611,7 @@ class PipelineConfig:
     """Whether to pool embedding outputs."""
 
     _huggingface_config: Optional[AutoConfig] = None
-    """The Hugging Face config associated with the `huggingface-repo-id`."""
+    """The Hugging Face config associated with the `model-path`."""
 
     _devices: list[Device] = field(default_factory=list)
     """The underlying initialized devices, created by the specific `device_specs`."""
@@ -640,6 +643,11 @@ class PipelineConfig:
         if self.max_length is not None and self.max_length < 0:
             msg = "max_length must be non-negative."
             raise ValueError(msg)
+
+        if self.huggingface_repo_id != "":
+            msg = "--huggingface-repo-id is deprecated, use `--model-path` instead. This setting will stop working in a future release."
+            logger.warning(msg)
+            self.model_path = self.huggingface_repo_id
 
         if self.max_cache_batch_size is not None:
             msg = "--max-cache-batch-size is deprecated, use `--max-batch-size` instead. This setting will stop working in a future release."
@@ -676,17 +684,14 @@ class PipelineConfig:
                 if len(path_pieces) >= 3:
                     repo_id = f"{path_pieces[0]}/{path_pieces[1]}"
                     file_name = "/".join(path_pieces[2:])
-                    if (
-                        self.huggingface_repo_id != ""
-                        and repo_id == self.huggingface_repo_id
-                    ):
+                    if self.model_path != "" and repo_id == self.model_path:
                         path = Path(file_name)
                     elif file_exists(repo_id, file_name):
                         self._weights_repo_id = repo_id
                         path = Path(file_name)
-                elif self.huggingface_repo_id == "":
+                elif self.model_path == "":
                     msg = (
-                        "Unable to derive huggingface_repo_id from weight_path, "
+                        "Unable to derive model_path from weight_path, "
                         "please provide a valid Hugging Face repository id."
                     )
                     raise ValueError(msg)
@@ -695,24 +700,24 @@ class PipelineConfig:
 
         self.weight_path = weight_paths
 
-        # If we cannot infer the weight path, we lean on the huggingface_repo_id
+        # If we cannot infer the weight path, we lean on the model_path
         # to provide it.
         if len(self.weight_path) == 0:
-            if self.huggingface_repo_id == "":
-                msg = "huggingface_repo_id must be provided and must be a valid Hugging Face repository"
+            if self.model_path == "":
+                msg = "model_path must be provided and must be a valid Hugging Face repository"
                 raise ValueError(msg)
-            elif (not os.path.exists(self.huggingface_repo_id)) and (
-                not repo_exists(self.huggingface_repo_id)
+            elif (not os.path.exists(self.model_path)) and (
+                not repo_exists(self.model_path)
             ):
-                msg = f"{self.huggingface_repo_id} is not a valid Hugging Face repository"
+                msg = (
+                    f"{self.model_path} is not a valid Hugging Face repository"
+                )
                 raise ValueError(msg)
-        elif (
-            self.huggingface_repo_id == "" and self._weights_repo_id is not None
-        ):
+        elif self.model_path == "" and self._weights_repo_id is not None:
             # weight_path is used and we should derive the repo_id from it.
             # At this point, we should have a resolved weight path - be it local or remote HF.
             # weight_path should not be used directly anymore.
-            self.huggingface_repo_id = self._weights_repo_id
+            self.model_path = self._weights_repo_id
 
         # Set sensible defaults. These are platform-specific.
         if self.max_num_steps < 0:
@@ -785,15 +790,15 @@ class PipelineConfig:
 
     def update_architecture(self) -> None:
         if self.architecture is None:
-            # Retrieve architecture from huggingface_repo_id.
+            # Retrieve architecture from model_path.
             # This is done without using the huggingface config, to reduce the
             # memory stored in this object, before it reaches the model worker.
             hf_config = AutoConfig.from_pretrained(
-                self.huggingface_repo_id,
+                self.model_path,
                 trust_remote_code=self.trust_remote_code,
             )
 
-            # If we cannot get an architecture from the huggingface_repo_id,
+            # If we cannot get an architecture from the model_path,
             # we cannot map the model to an internal architecture, and cannot
             # be run using the MAX engine.
 
@@ -814,11 +819,11 @@ class PipelineConfig:
 
     @property
     def huggingface_config(self) -> AutoConfig:
-        """Given the huggingface_repo_id, return the Hugging Face Config."""
+        """Given the model_path, return the Hugging Face Config."""
         if self._huggingface_config is None:
             # Lazy initialize the Hugging Face config field.
             self._huggingface_config = AutoConfig.from_pretrained(
-                self.huggingface_repo_id,
+                self.model_path,
                 trust_remote_code=self.trust_remote_code,
             )
             assert self._huggingface_config is not None, (
@@ -899,7 +904,7 @@ class PipelineConfig:
             (
                 self._weights_repo_id
                 if self._weights_repo_id
-                else self.huggingface_repo_id
+                else self.model_path
             ),
             trust_remote_code=self.trust_remote_code,
         )
@@ -926,9 +931,7 @@ class PipelineConfig:
 
         start_time = datetime.datetime.now()
         weights_repo_id = (
-            self._weights_repo_id
-            if self._weights_repo_id
-            else self.huggingface_repo_id
+            self._weights_repo_id if self._weights_repo_id else self.model_path
         )
         logger.info(f"Starting download of model: {weights_repo_id}")
         # max_workers=8 setting copied from default for
@@ -978,14 +981,15 @@ class PipelineConfig:
     def short_name(self) -> str:
         """Returns a short name for the model defined by this PipelineConfig."""
         # TODO: Deprecate use of short_name.
-        return self.huggingface_repo_id
+        return self.model_path
 
     @staticmethod
     def help() -> dict[str, str]:
         return {
-            "huggingface_repo_id": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
+            "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
+            "huggingface_repo_id": "DEPRECATED: Use `model_path` instead.",
             "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
-            "architecture": "Deprecated - Please set `huggingface-repo-id` instead. Define the model architecture to run. This should match one of the supported architectures for your selected engine.",
+            "architecture": "Deprecated - Please set `model-path` instead. Define the model architecture to run. This should match one of the supported architectures for your selected engine.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",
             "quantization_encoding": "Define the weight encoding type for quantization. This can help optimize performance and memory usage during inference. ie. q4_k, bfloat16 etc.",
             "serialized_model_path": "If specified, this flag attempts to load a serialized MEF model from the given path. This is useful for reusing previously saved models.",
@@ -1017,7 +1021,7 @@ class PipelineConfig:
             (
                 self._weights_repo_id
                 if self._weights_repo_id
-                else self.huggingface_repo_id
+                else self.model_path
             ),
             trust_remote_code=self.trust_remote_code,
         )

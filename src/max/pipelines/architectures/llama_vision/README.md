@@ -76,7 +76,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
    architecture. For example:
 
    ```shell
-   magic run serve --huggingface-repo-id meta-llama/Llama-3.2-11B-Vision-Instruct
+   magic run serve --model-path meta-llama/Llama-3.2-11B-Vision-Instruct
    ```
 
    A request can be submitted via a cURL command.
@@ -102,7 +102,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
 The following command-line options are available to customize operation of the
 pipeline:
 
-- `--huggingface-repo-id`: Specify the repository ID of a Hugging Face model
+- `--model-path`: Specify the repository ID of a Hugging Face model
   repository to use. This is used to load tokenizers, architectures and model
   weights.
 - `--force-download`: Specify whether to force a download of configuration
