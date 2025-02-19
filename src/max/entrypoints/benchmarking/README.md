@@ -1,12 +1,19 @@
 # Benchmark MAX Serve
 
-This repository contains tools to benchmark
+This directory contains tools to benchmark
 [MAX Serve](https://docs.modular.com/max/serve/) performance. You can also use
 these scripts to compare different LLM serving backends such as
 [vLLM](https://github.com/vllm-project/vllm) and
 [TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM) against MAX. The
 benchmarking tools measure throughput, latency, and resource utilization
 metrics.
+
+Key features:
+
+- Tests any OpenAI-compatible HTTP endpoint
+- Supports both chat and completion APIs
+- Measures detailed latency metrics
+- Works with hosted services
 
 > The `benchmark_serving.py` script is adapted from
 > [vLLM](https://github.com/vllm-project/vllm/blob/main/benchmarks),
@@ -16,96 +23,36 @@ metrics.
 
 ## Table of contents
 
-- [Setup](#setup)
-- [Benchmarking scripts](#benchmarking-scripts)
-- [Output](#output)
+- [Get started](#get-started)
+- [Basic usage](#basic-usage)
 - [Reference](#reference)
 - [Troubleshooting](#troubleshooting)
 
-## Setup
+## Get started
 
-### Prerequisites
+If this is your first time benchmarking a MAX Serve endpoint,
+we recommend that you follow our [tutorial to benchmark MAX Serve on
+a GPU](https://docs.modular.com/max/tutorials/benchmark-max-serve/).
 
-To benchmark model performance with the provided scripts, be sure to have the
-following:
+## Basic usage
 
-- [Install Magic](https://docs.modular.com/magic/#install-magic)
-- Python 3.9.0 - 3.12.0
-- A local or cloud environment with access to NVIDIA A100 GPUs (the benchmarking
- scripts are also compatible with A10, L4, and L40 GPUs)
-- A Hugging Face account
+You can benchmark any HTTP endpoint that implements
+OpenAI-compatible APIs as follows.
 
-### Install requirements
+First enter the local virtual environment:
 
-Clone the repository and navigate to the `benchmarks` directory.
+```cd
+git clone -b stable https://github.com/modular/max.git
 
-```bash
-git clone https://github.com/modular/max.git
 cd max/pipelines/python/max/entrypoints/benchmarking
-```
 
-install the dependencies via
-
-```bash
-magic install
-```
-
-### Prepare benchmarking dataset
-
-We recommend using the
-[ShareGPT](
-  https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered)
-dataset for benchmarking model performance. You can download the dataset with
-the following command:
-
-```bash
-wget https://huggingface.co/datasets/anon8231489123/ShareGPT_Vicuna_unfiltered\
-/resolve/main/ShareGPT_V3_unfiltered_cleaned_split.json
-```
-
-You can optionally use your own datasets for custom evaluations.
-
-### Verify model access through Hugging Face
-
-To download and use
-[Llama 3.1 8B Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
-from Hugging Face, you must have a Hugging Face account, a Hugging Face user
-access token, and access to Meta's Llama 3.1 Hugging Face gated repository.
-
-To create a Hugging Face user access token, see
-[Access Tokens](https://huggingface.co/settings/tokens). Within your local
-environment, save your access token as an environment variable.
-
-```bash
-export HF_TOKEN="your_huggingface_token"
-```
-
-Use your user access token to log into Hugging Face.
-
-```bash
-huggingface-cli login
-```
-
-Verify that you have access to the
-[Llama 3.1 8B Instruct](https://huggingface.co/meta-llama/Llama-3.1-8B-Instruct)
-model. For more information, see
-[Access gated models as a user](
-  https://huggingface.co/docs/hub/en/models-gated).
-
-## Benchmarking scripts
-
-This repository provides the following script to benchmark MAX Serve:
-
-### HTTP endpoint benchmarking with `benchmark_serving.py`
-
-First enter the dedicate shell for the project via:
-
-```bash
 magic shell
 ```
 
-Then we can benchmark any HTTP endpoint that implements
-OpenAI-compatible APIs as follows:
+Then run the benchmark script while specifying your active
+MAX Serve endpoint, model, and corresponding dataset to
+use for benchmarking (for more detail, see our [benchmarking
+tutorial](https://docs.modular.com/max/tutorials/benchmark-max-serve)):
 
 ```bash
 python benchmark_serving.py \
@@ -117,20 +64,9 @@ python benchmark_serving.py \
     --num-prompts 500
 ```
 
-Notes:
+To exit the virtual environment shell simply run `exit`.
 
- 1. To exit the Magic shell simply run `exit`.
-
- 2. For more details about Magic, please see this [step-by-step guide to Magic](https://docs.modular.com/max/tutorials/magic/).
-
-Key features:
-
-- Tests any OpenAI-compatible HTTP endpoint
-- Supports both chat and completion APIs
-- Measures detailed latency metrics
-- Works with hosted services
-
-## Output
+### Output
 
 Results are saved in JSON format under the `results/` directory with the
 following naming convention:
