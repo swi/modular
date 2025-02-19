@@ -855,6 +855,12 @@ class PipelineRegistry:
         )
         factory_str = "factory" if factory else ""
 
+        weights_repo_str = (
+            f"\n            weights_repo_id:        {pipeline_config._weights_repo_id}"
+            if pipeline_config._weights_repo_id
+            else ""
+        )
+
         devices_str = ", ".join(
             f"{d.label}[{d.id}]" for d in pipeline_config.devices
         )
@@ -864,7 +870,7 @@ class PipelineRegistry:
             engine:                 {pipeline_config.engine}
             architecture:           {pipeline_config.architecture}
             devices:                {devices_str}
-            huggingface_repo_id:    {pipeline_config.huggingface_repo_id}
+            huggingface_repo_id:    {pipeline_config.huggingface_repo_id}{weights_repo_str}
             quantization_encoding:  {pipeline_config.quantization_encoding}
             cache_strategy:         {pipeline_config.cache_strategy}
             weight_path:            [

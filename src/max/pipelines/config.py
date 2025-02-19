@@ -608,6 +608,9 @@ class PipelineConfig:
     _weights_converter: Optional[type[WeightsConverter]] = None
     """Weight converter for the provided `weight_path`."""
 
+    _weights_repo_id: Optional[str] = None
+    """Hugging Face repo id to load weights from only. This should only be set by internal code."""
+
     _available_cache_memory: Optional[int] = None
     """The amount of available cache memory in bytes. This should only be set by internal code."""
 
@@ -640,7 +643,6 @@ class PipelineConfig:
             self.weight_path = list(self.weight_path)
         elif not isinstance(self.weight_path, list):
             self.weight_path = [self.weight_path]
-        local_repo_id = None
         weight_paths = []
         # Validate that if weight_paths are passed as strings, they are converted to Path.
         for path in self.weight_path:
@@ -660,7 +662,7 @@ class PipelineConfig:
             # If the path, looks like it may start with a Hugging Face repo id,
             # check if the repo_id is the same as the one provided.
             # If it is the same, set the weight_path to just be the file_name post repo_id
-            # If it is different, set the local_repo_id to be that repo_id
+            # If it is different, set the _weights_repo_id to be that repo_id
             # and set the path to be the file_name without the repo_id.
             if path_pieces := str(path).split("/"):
                 if len(path_pieces) >= 3:
@@ -672,7 +674,7 @@ class PipelineConfig:
                     ):
                         path = Path(file_name)
                     elif file_exists(repo_id, file_name):
-                        local_repo_id = repo_id
+                        self._weights_repo_id = repo_id
                         path = Path(file_name)
                 elif self.huggingface_repo_id == "":
                     msg = (
@@ -696,11 +698,13 @@ class PipelineConfig:
             ):
                 msg = f"{self.huggingface_repo_id} is not a valid Hugging Face repository"
                 raise ValueError(msg)
-        elif local_repo_id is not None:
+        elif (
+            self.huggingface_repo_id == "" and self._weights_repo_id is not None
+        ):
             # weight_path is used and we should derive the repo_id from it.
             # At this point, we should have a resolved weight path - be it local or remote HF.
             # weight_path should not be used directly anymore.
-            self.huggingface_repo_id = local_repo_id
+            self.huggingface_repo_id = self._weights_repo_id
 
         # Set sensible defaults. These are platform-specific.
         if self.max_num_steps < 0:
@@ -884,7 +888,11 @@ class PipelineConfig:
     def weights_size(self) -> int:
         size = 0
         hf_repo = HuggingFaceRepo(
-            self.huggingface_repo_id,
+            (
+                self._weights_repo_id
+                if self._weights_repo_id
+                else self.huggingface_repo_id
+            ),
             trust_remote_code=self.trust_remote_code,
         )
         for file_path in self.weight_path:
@@ -909,14 +917,19 @@ class PipelineConfig:
             return
 
         start_time = datetime.datetime.now()
-        logger.info(f"Starting download of model: {self.huggingface_repo_id}")
+        weights_repo_id = (
+            self._weights_repo_id
+            if self._weights_repo_id
+            else self.huggingface_repo_id
+        )
+        logger.info(f"Starting download of model: {weights_repo_id}")
         # max_workers=8 setting copied from default for
         # huggingface_hub.snapshot_download.
         self.weight_path = list(
             thread_map(
                 lambda filename: Path(
                     hf_hub_download(
-                        self.huggingface_repo_id,
+                        weights_repo_id,
                         str(filename),
                         force_download=self.force_download,
                     )
@@ -928,7 +941,7 @@ class PipelineConfig:
         )
 
         logger.info(
-            f"Finished download of model: {self.huggingface_repo_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
+            f"Finished download of model: {weights_repo_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
         )
 
     def load_weights(self) -> Weights:
@@ -991,7 +1004,11 @@ class PipelineConfig:
 
     def huggingface_weights_repo(self) -> HuggingFaceRepo:
         return HuggingFaceRepo(
-            self.huggingface_repo_id,
+            (
+                self._weights_repo_id
+                if self._weights_repo_id
+                else self.huggingface_repo_id
+            ),
             trust_remote_code=self.trust_remote_code,
         )
 
