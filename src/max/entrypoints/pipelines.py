@@ -100,6 +100,12 @@ def cli_serve(
     sim_failure,
     **config_kwargs,
 ):
+    """Start a model serving endpoint for inference.
+
+    This command launches a server that can handle inference requests for the
+    specified model. The server supports various performance optimization
+    options and monitoring capabilities.
+    """
     # Initialize config, and serve.
     pipeline_config = PipelineConfig(**config_kwargs)
     failure_percentage = None
@@ -142,6 +148,11 @@ def cli_serve(
     help="# of warmup iterations to run before the final timed run.",
 )
 def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
+    """Generate text using the specified model.
+
+    This command runs text generation using the loaded model, optionally
+    accepting image inputs for multimodal models.
+    """
     # Replit model_paths are kinda broken due to transformers
     # version mismatch. We manually update trust_remote_code to True
     # because the modularai version does not have the custom Python code needed
@@ -184,6 +195,11 @@ def cli_pipeline(prompt, image_url, num_warmups, **config_kwargs):
     help="# of warmup iterations to run before the final timed run.",
 )
 def encode(prompt, num_warmups, **config_kwargs):
+    """Encode text input into model embeddings.
+
+    This command processes the input text through the model's encoder, producing
+    embeddings that can be used for various downstream tasks.
+    """
     # Load tokenizer & pipeline.
     pipeline_config = PipelineConfig(**config_kwargs)
     pipeline_encode(
@@ -196,16 +212,16 @@ def encode(prompt, num_warmups, **config_kwargs):
 @main.command(name="warm-cache")
 @pipeline_config_options
 def cli_warm_cache(**config_kwargs) -> None:
-    """Load the model and do nothing with it, warming the cache in the process.
+    """Load and compile the model to prepare caches.
 
     This command is particularly useful in combination with
-    --save-to-serialized-model-path.  Providing that option to this command
-    will result in a compiled model being stored to that path.  Subsequent
-    invocations of other commands can then use --serialized-model-path to reuse
-    the previously-compiled model.
+    --save-to-serialized-model-path. Providing that option to this command
+    will result in a compiled model being stored to that path. Subsequent
+    invocations of other commands can then use --serialized-model-path to
+    reuse the previously-compiled model.
 
     Even without --save-to-serialized-model-path, this command will as a side
-    effect warm the HuggingFace cache and in some cases, MAX compilation
+    effect warm the Hugging Face cache and in some cases, MAX compilation
     caches.
     """
     pipeline_config = PipelineConfig(**config_kwargs)
@@ -221,6 +237,11 @@ def cli_warm_cache(**config_kwargs) -> None:
     help="Print the list of pipelines options in JSON format.",
 )
 def cli_list(json):
+    """List available pipeline configurations and models.
+
+    This command displays information about all registered pipelines and their
+    configurations. Output can be formatted as human-readable text or JSON.
+    """
     if json:
         list_pipelines_to_json()
     else:
