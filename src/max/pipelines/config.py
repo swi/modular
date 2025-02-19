@@ -545,6 +545,14 @@ class PipelineConfig:
     """Maximum cache size to reserve for a single context encoding batch.
     The actual limit is the lesser of this and `max_batch_size`."""
 
+    enable_chunked_prefill: bool = True
+    """Enable chunked prefill to split context encoding requests into multiple chunks
+    based on 'target_num_new_tokens'."""
+
+    enable_in_flight_batching: bool = False
+    """When enabled, prioritizes token generation by batching it with context
+    encoding requests. Requires chunked prefill."""
+
     cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT
     """The cache strategy to use. This defaults to `model_default`, which will set the cache
     strategy based on the default strategy for the architecture requested.
@@ -986,6 +994,8 @@ class PipelineConfig:
             "max_new_tokens": "Specify the maximum number of new tokens to generate during a single inference pass of the model. Default is -1, which means the model will generate until the maximum sequence length is hit, or and eos token is generated.",
             "max_batch_size": "Define the maximum cache size reserved for a single batch. This value defaults to 1. Increase this value based on server capacity when deploying in production.",
             "max_ce_batch_size": "Set the maximum cache size reserved for a single context encoding batch. The effective limit will be the lesser of this value and `max-cache-batch-size`. Default is 32.",
+            "enable_chunked_prefill": "Enable chunked prefill to split context encoding requests into multiple chunks based on `target-num-new-tokens`",
+            "enable_in_flight_batching": "When enabled, prioritizes token generation by batching it with context encoding requests. Requires chunked prefill.",
             "max_cache_batch_size": "DEPRECATED: Use `max_batch_size` instead.",
             "cache_strategy": "Force a specific cache strategy: 'naive' or 'continuous'. If not provided, the optimal caching strategy for the model requested will be selected.",
             "rope_type": "Force using a specific rope type, `none` | `normal' | `nexo`. Only matters for GGUF weights.",
