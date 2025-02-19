@@ -643,7 +643,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 except NotImplementedError:
                     logger.warning(
                         "Unable to compute log probabilities for"
-                        f" {self._pipeline_config.short_name}"
+                        f" {self._pipeline_config.model_path}"
                     )
                     batch_log_probabilities.append(None)
             # Check if we're on our last iteration. If so, skip preparing the next batch

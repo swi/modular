@@ -556,7 +556,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             if model_outputs.logits is None:
                 logger.warning(
                     "Could not get logprobs with echo because the full logits"
-                    f" were not returned by {self.pipeline_config.short_name}"
+                    f" were not returned by {self.pipeline_config.model_path}"
                     " model. Please ensure that this model is started with "
                     "`--enable-echo`."
                 )

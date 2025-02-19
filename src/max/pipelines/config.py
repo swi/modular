@@ -495,8 +495,13 @@ def _scan_available_devices() -> list[DeviceSpec]:
         return [DeviceSpec.accelerator(i) for i in range(accel_count)]
 
 
+@dataclass
+class PipelineBaseConfig:
+    pass
+
+
 @dataclass(frozen=False)
-class PipelineConfig:
+class PipelineConfig(PipelineBaseConfig):
     # When adding a new config parameter here, please remember to add a
     # description to the `help()` method below
 
@@ -976,12 +981,6 @@ class PipelineConfig:
                 f"loading weights format '{self.weights_format}' not supported"
             )
             raise ValueError(msg)
-
-    @property
-    def short_name(self) -> str:
-        """Returns a short name for the model defined by this PipelineConfig."""
-        # TODO: Deprecate use of short_name.
-        return self.model_path
 
     @staticmethod
     def help() -> dict[str, str]:
