@@ -38,6 +38,7 @@ from huggingface_hub import (
     repo_exists,
 )
 from huggingface_hub.hf_api import ModelInfo
+from huggingface_hub.utils import tqdm as hf_tqdm
 from max.driver import CPU, Accelerator, Device, DeviceSpec, accelerator_count
 from max.dtype import DType
 from max.graph.quantization import QuantizationConfig, QuantizationEncoding
@@ -48,6 +49,7 @@ from max.graph.weights import (
     WeightsConverter,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
+from tqdm.contrib.concurrent import thread_map
 from transformers import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
@@ -908,14 +910,22 @@ class PipelineConfig:
 
         start_time = datetime.datetime.now()
         logger.info(f"Starting download of model: {self.huggingface_repo_id}")
-        for i, filename in enumerate(self.weight_path):
-            self.weight_path[i] = Path(
-                hf_hub_download(
-                    self.huggingface_repo_id,
-                    str(filename),
-                    force_download=self.force_download,
-                )
+        # max_workers=8 setting copied from default for
+        # huggingface_hub.snapshot_download.
+        self.weight_path = list(
+            thread_map(
+                lambda filename: Path(
+                    hf_hub_download(
+                        self.huggingface_repo_id,
+                        str(filename),
+                        force_download=self.force_download,
+                    )
+                ),
+                self.weight_path,
+                max_workers=8,
+                tqdm_class=hf_tqdm,
             )
+        )
 
         logger.info(
             f"Finished download of model: {self.huggingface_repo_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
