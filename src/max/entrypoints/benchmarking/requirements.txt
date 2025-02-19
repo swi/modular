@@ -1,7 +1,6 @@
 aiohttp
 huggingface_hub[hf_transfer]
 huggingface_hub
-modelscope
 numpy
 tqdm
 transformers
