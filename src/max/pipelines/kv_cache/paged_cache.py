@@ -757,6 +757,7 @@ class PagedKVCacheManager(KVCacheManager):
                         self.total_num_pages,
                         self.page_size,
                         self.num_layers,
+                        is_total_num_pages_parameterized=True,
                     ),
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
