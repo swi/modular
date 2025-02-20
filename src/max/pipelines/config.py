@@ -495,13 +495,8 @@ def _scan_available_devices() -> list[DeviceSpec]:
         return [DeviceSpec.accelerator(i) for i in range(accel_count)]
 
 
-@dataclass
-class PipelineBaseConfig:
-    pass
-
-
 @dataclass(frozen=False)
-class PipelineConfig(PipelineBaseConfig):
+class PipelineConfig:
     # When adding a new config parameter here, please remember to add a
     # description to the `help()` method below
 
