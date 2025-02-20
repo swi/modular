@@ -13,7 +13,10 @@
 
 """Abstract base class for KVCacheManager for KV Cache."""
 
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from collections import deque
 from dataclasses import dataclass
 from typing import Any, List, Sequence, final
 
@@ -55,8 +58,20 @@ class KVCacheInputSymbols:
     """
 
     def __iter__(self):
-        for field in self.__dataclass_fields__:
-            yield getattr(self, field)
+        """Iterates through each Type in order."""
+        fields = deque(
+            getattr(self, field) for field in self.__dataclass_fields__
+        )
+        while fields:
+            value = fields.popleft()
+            if isinstance(value, KVCacheInputSymbols):
+                fields.extendleft(
+                    getattr(value, field)
+                    for field in value.__dataclass_fields__
+                )
+                continue
+            else:
+                yield value
 
     def __getitem__(self, index):
         return list(self)[index]
@@ -375,8 +390,9 @@ class KVCacheManager(ABC):
         return graph
 
     def _create_ragged_increment_cache_lengths_graph(self) -> Graph:
+        input_symbols = self.input_symbols()
         cache_lengths_types = [
-            self.input_symbols()[i][1] for i in range(len(self.devices))
+            input_symbols[i][1] for i in range(len(self.devices))
         ]
 
         input_row_offsets_type = TensorType(
