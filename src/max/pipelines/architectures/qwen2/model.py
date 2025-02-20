@@ -346,7 +346,7 @@ class Qwen2Model(PipelineModel[TextContext]):
         kv_params = self.get_kv_params(self.pipeline_config)
         n_devices = kv_params.n_devices
         fetch_types = self.kv_manager.input_symbols()
-        len_of_kv_tuple_per_dev = len(fetch_types[0])
+        len_of_kv_tuple_per_dev = len(list(fetch_types[0]))
         kv_caches_per_dev = [
             tuple(
                 kv_inputs_flat[

@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from functools import reduce
 from operator import mul
 from typing import Any, List
@@ -34,7 +35,15 @@ from max.graph import (
 
 from ._utils import build_max_lengths_tensor
 from .cache_params import KVCacheParams
-from .manager import KVCacheManager
+from .manager import KVCacheInputSymbols, KVCacheManager
+
+
+@dataclass
+class ContinuousBatchingKVCacheInputSymbols(KVCacheInputSymbols):
+    kv_blocks: TensorType
+    cache_lengths: TensorType
+    lookup_table: TensorType
+    max_lengths: TensorType
 
 
 class ContinuousBatchingKVCacheType(_OpaqueType):
@@ -333,23 +342,24 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
 
     def input_symbols(
         self,
-    ) -> List[tuple[TensorType, TensorType, TensorType, TensorType]]:
+    ) -> List[ContinuousBatchingKVCacheInputSymbols]:
         """Returns the expected input tensor types for `fetch` on each device.
 
-        Defines the tensor specifications needed by the cache implementation, including
-        shapes and data types. This is used for graph construction and validation.
+        Defines the tensor specifications needed by the cache implementation,
+        including shapes and data types. This is used for graph construction
+        and validation.
 
         Returns:
-            List of tuples for each device containing TensorTypes for:
+            List of ContinuousBatchingKVCacheInputSymbols for each device
+            containing TensorTypes for:
             - KV cache blocks: 6D tensor for storing keys and values
             - Cache lengths: 1D tensor tracking sequence lengths
             - Lookup table: 1D tensor mapping sequence IDs to cache positions
             - Maximum lengths: 2D tensor tracking maximum sequence and cache lengths per step.
         """
         return [
-            (
-                # kv_blocks
-                TensorType(
+            ContinuousBatchingKVCacheInputSymbols(
+                kv_blocks=TensorType(
                     self.params.dtype,
                     shape=[
                         "num_blocks",
@@ -361,20 +371,18 @@ class ContinuousBatchingKVCacheManager(KVCacheManager):
                     ],
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
-                # cache_lengths
-                TensorType(
+                cache_lengths=TensorType(
                     DType.uint32,
                     shape=["batch_size"],
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
-                # lookup_table
-                TensorType(
+                lookup_table=TensorType(
                     DType.uint32,
                     shape=["batch_size"],
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
                 # max_lengths (on host)
-                TensorType(
+                max_lengths=TensorType(
                     DType.uint32,
                     shape=["steps_remaining", 2],
                     # TODO: This is a hack introduced to remediate a negative side effect

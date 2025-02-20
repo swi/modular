@@ -13,6 +13,7 @@
 
 """Naive KV cache for the Transformer."""
 
+from dataclasses import dataclass
 from functools import reduce
 from operator import mul
 from typing import Any, List
@@ -24,7 +25,15 @@ from max.engine import InferenceSession
 from max.graph import BufferType, TensorType
 
 from .cache_params import KVCacheParams
-from .manager import KVCacheManager
+from .manager import KVCacheInputSymbols, KVCacheManager
+
+
+@dataclass
+class NaiveKVCacheInputSymbols(KVCacheInputSymbols):
+    k_cache: BufferType
+    v_cache: BufferType
+    start_pos: TensorType
+    null_op: TensorType
 
 
 class NaiveKVCacheManager(KVCacheManager):
@@ -171,11 +180,10 @@ class NaiveKVCacheManager(KVCacheManager):
 
     def input_symbols(
         self,
-    ) -> List[tuple[BufferType, BufferType, TensorType, TensorType]]:
+    ) -> List[NaiveKVCacheInputSymbols]:
         return [
-            (
-                # k_cache
-                BufferType(
+            NaiveKVCacheInputSymbols(
+                k_cache=BufferType(
                     self.params.dtype,
                     shape=[
                         "max_seq_len",
@@ -185,8 +193,7 @@ class NaiveKVCacheManager(KVCacheManager):
                         self.params.head_dim,
                     ],
                 ),
-                # v_cache
-                BufferType(
+                v_cache=BufferType(
                     self.params.dtype,
                     shape=[
                         "max_seq_len",
@@ -196,9 +203,8 @@ class NaiveKVCacheManager(KVCacheManager):
                         self.params.head_dim,
                     ],
                 ),
-                # start_pos
-                TensorType(DType.int64, shape=[]),
+                start_pos=TensorType(DType.int64, shape=[]),
                 # null_op - this isnt used for the naive cache
-                TensorType(DType.int64, shape=[]),
+                null_op=TensorType(DType.int64, shape=[]),
             )
         ]

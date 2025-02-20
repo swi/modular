@@ -40,7 +40,7 @@ from max.graph import (
 
 from ._utils import build_max_lengths_tensor
 from .cache_params import KVCacheParams
-from .manager import KVCacheManager
+from .manager import KVCacheInputSymbols, KVCacheManager
 from .radix_trie import RadixTrie, TrieNode
 
 PERCENTAGE_BLOCKS_TO_EVICT = 0.05
@@ -50,6 +50,14 @@ def ceildiv(n: int, d: int) -> int:
     """Compute ceil(n/d) using strictly integer arithmetic."""
     q, r = divmod(n, d)
     return q + bool(r)
+
+
+@dataclass
+class PagedCacheInputSymbols(KVCacheInputSymbols):
+    kv_blocks: TensorType
+    cache_lengths: TensorType
+    lookup_table: TensorType
+    max_lengths: TensorType
 
 
 class PagedKVCacheType(_OpaqueType):
@@ -743,29 +751,27 @@ class PagedKVCacheManager(KVCacheManager):
 
     def input_symbols(
         self,
-    ) -> list[tuple[TensorType, TensorType, TensorType, TensorType]]:
+    ) -> list[PagedCacheInputSymbols]:
         return [
-            (
-                # kv_blocks
-                TensorType(
+            PagedCacheInputSymbols(
+                kv_blocks=TensorType(
                     self.params.dtype,
                     shape=self.block_shape(is_parameterized=True),
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
-                # cache_lengths
-                TensorType(
+                cache_lengths=TensorType(
                     DType.uint32,
                     shape=["batch_size"],
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
-                # lookup_table
-                TensorType(
+                lookup_table=TensorType(
                     DType.uint32,
                     shape=["batch_size", "max_num_pages"],
                     device=DeviceRef(self.devices[i].label, self.devices[i].id),
                 ),
-                # max_lengths
-                TensorType(DType.uint32, shape=["steps_remaining", 2]),
+                max_lengths=TensorType(
+                    DType.uint32, shape=["steps_remaining", 2]
+                ),
             )
             for i in range(len(self.devices))
         ]

@@ -21,7 +21,7 @@ import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
 
 from .cache_params import KVCacheParams
 
@@ -35,6 +35,31 @@ class _FetchMetadata:
 
     prompt: np.ndarray
     num_steps: int
+
+
+@dataclass
+class KVCacheInputSymbols:
+    """
+    Base class for input symbols for KV cache managers.
+
+    The derived class is responsible for defining the input symbols for the
+    specific KV cache manager.
+
+    For example, here's a derived class for a text KV cache manager:
+        >>> @dataclass
+        ... class ContinuousBatchingKVCacheInputSymbols(KVCacheInputSymbols):
+        ...     kv_blocks: TensorType
+        ...     cache_lengths: TensorType
+        ...     lookup_table: TensorType
+        ...     max_lengths: TensorType
+    """
+
+    def __iter__(self):
+        for field in self.__dataclass_fields__:
+            yield getattr(self, field)
+
+    def __getitem__(self, index):
+        return list(self)[index]
 
 
 class KVCacheManager(ABC):
@@ -132,7 +157,9 @@ class KVCacheManager(ABC):
     @abstractmethod
     def input_symbols(
         self,
-    ) -> Sequence[tuple[Type, ...]]: ...
+    ) -> Sequence[KVCacheInputSymbols]:
+        """Returns the input symbols for the kv cache manager."""
+        ...
 
     def claim(self, n: int) -> List[int]:
         """Claims `n` blocks of memory in the cache for incoming requests.

@@ -16,13 +16,14 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any, Iterable, Optional, cast, final
 
 import numpy as np
 from max.driver import Device, Tensor
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Dim, Graph, Shape, TensorType, TensorValue, Type, ops
+from max.graph import Dim, Graph, Shape, TensorType, TensorValue, ops
 from max.graph.weights import Weights
 from max.pipelines import (
     ModelInputs,
@@ -34,6 +35,7 @@ from max.pipelines import (
 )
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheManager,
+    KVCacheInputSymbols,
     KVCacheManager,
     KVCacheParams,
     KVCacheStrategy,
@@ -49,6 +51,12 @@ from .language_model import CausalLanguageModel, instantiate_language_model
 from .vision_model import instantiate_vision_model
 
 logger = logging.getLogger("max.pipelines")
+
+
+@dataclass
+class MultimodalKVCacheInputSymbols(KVCacheInputSymbols):
+    text_kv_input_symbols: KVCacheInputSymbols
+    vision_kv_input_symbols: KVCacheInputSymbols
 
 
 class MultimodalKVCacheManager(KVCacheManager):
@@ -270,7 +278,7 @@ class MultimodalKVCacheManager(KVCacheManager):
     @final
     def input_symbols(
         self,
-    ) -> Sequence[tuple[Type, ...]]:
+    ) -> Sequence[MultimodalKVCacheInputSymbols]:
         """Returns concatenated input symbols for text and vision KV managers.
 
         This has to rename input symbols that aren't necessarily the same:
@@ -280,10 +288,12 @@ class MultimodalKVCacheManager(KVCacheManager):
 
         def _input_symbols(
             manager: KVCacheManager, num_layers_key: str, max_seq_len_key: str
-        ) -> tuple[Type, ...]:
+        ) -> KVCacheInputSymbols:
             input_symbols = manager.input_symbols()[0]
-            assert isinstance(input_symbols[0], TensorType)
-            input_symbols[0].shape = Shape(
+            # Get first element from input_symbols sequence
+            first_input_symbols = input_symbols[0]
+            assert isinstance(first_input_symbols, TensorType)
+            first_input_symbols.shape = Shape(
                 [
                     "num_blocks",
                     2,
@@ -296,14 +306,16 @@ class MultimodalKVCacheManager(KVCacheManager):
             return input_symbols
 
         return [
-            _input_symbols(
-                self.text_kv_manager, "text_num_layers", "text_max_seq_len"
+            MultimodalKVCacheInputSymbols(
+                text_kv_input_symbols=_input_symbols(
+                    self.text_kv_manager, "text_num_layers", "text_max_seq_len"
+                ),
+                vision_kv_input_symbols=_input_symbols(
+                    self.vision_kv_manager,
+                    "vision_num_layers",
+                    "vision_max_seq_len",
+                ),
             )
-            + _input_symbols(
-                self.vision_kv_manager,
-                "vision_num_layers",
-                "vision_max_seq_len",
-            ),
         ]
 
     def step(self, seq_ids_and_new_tokens: dict[int, np.ndarray]) -> None:
@@ -743,10 +755,9 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
 
         # Unpack multimodal KV inputs.
         assert isinstance(self.kv_manager, MultimodalKVCacheManager)
-        num_text_kv_inputs = self.kv_manager.text_kv_manager.num_kv_inputs()
         input_symbols = self.kv_manager.input_symbols()[0]
-        text_kv_input_symbols = input_symbols[:num_text_kv_inputs]
-        vision_kv_input_symbols = input_symbols[num_text_kv_inputs:]
+        text_kv_input_symbols = input_symbols.text_kv_input_symbols
+        vision_kv_input_symbols = input_symbols.vision_kv_input_symbols
 
         input_types = [
             cross_attention_states_type,
@@ -766,7 +777,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
                 weights=self.weights,
                 kv_params=self.get_kv_params(self.pipeline_config),
                 max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
-                num_text_kv_cache_inputs=len(text_kv_input_symbols),
+                num_text_kv_cache_inputs=len(list(text_kv_input_symbols)),
             ),
             input_types=input_types,
         )
