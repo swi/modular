@@ -241,16 +241,16 @@ class RadixTrie:
         if len(tokens) // self.page_size != len(blocks):
             msg = f"Insertion failed: the number of tokens and blocks do not match. len(tokens) // self.page_size == {len(tokens)} // {self.page_size} == {len(tokens) // self.page_size} but len(blocks) == {len(blocks)}."
             raise ValueError(msg)
+
+        if node is None:
+            node = self.root
+
         if len(tokens) == 0:
-            msg = "Insertion failed: Attempted to insert 0 tokens into trie. Please provide at least one token to insert."
-            raise ValueError(msg)
+            return node
 
         # clone to avoid mutating the original lists
         tokens = tokens.copy()
         blocks = blocks.copy()
-
-        if node is None:
-            node = self.root
         return insert_helper(node, tokens, blocks)
 
     def match_prefix(
@@ -297,15 +297,14 @@ class RadixTrie:
                 blocks.extend(curr.blocks)
                 return match_prefix_helper(curr, tokens[prefix_len:], blocks)
 
-        if len(tokens) == 0:
-            msg = "Match failed: Attempted to match 0 tokens in trie. Please provide at least one token to match."
-            raise ValueError(msg)
-
-        tokens = tokens[: len(tokens) // self.page_size * self.page_size]
-
-        blocks: List[BlockId] = []
         if node is None:
             node = self.root
+        blocks: List[BlockId] = []
+
+        if len(tokens) == 0:
+            return node, []
+
+        tokens = tokens[: len(tokens) // self.page_size * self.page_size]
         curr = match_prefix_helper(node, tokens, blocks)
         return curr, blocks
 

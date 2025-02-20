@@ -477,7 +477,7 @@ class PagedKVCacheManager(KVCacheManager):
 
             # Extend the kv cache for given request with any cached prefixes.
             cached_blocks: list[int] = []
-            if self.radix_trie is not None and len(prompt) > 1:
+            if self.radix_trie is not None:
                 # Attempt to match all but the last token in the prompt. This is
                 # because the model expects a prompt of length at least 1.
                 _, cached_blocks = self.radix_trie.match_prefix(
@@ -929,12 +929,11 @@ class PagedKVCacheManager(KVCacheManager):
 
                 # If there are any tokens to commit, insert them into the radix
                 # trie.
-                if len(tokens_to_commit) > 0:
-                    request_metadata.node = self.radix_trie.insert(
-                        tokens_to_commit,
-                        blocks_to_commit,
-                        node=request_metadata.node,
-                    )
+                request_metadata.node = self.radix_trie.insert(
+                    tokens_to_commit,
+                    blocks_to_commit,
+                    node=request_metadata.node,
+                )
 
                 # Mark the recently committed blocks as in use by this sequence
                 # so they don't get evicted prematurely.
