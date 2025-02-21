@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -42,6 +43,8 @@ from ._utils import build_max_lengths_tensor
 from .cache_params import KVCacheParams
 from .manager import KVCacheInputSymbols, KVCacheManager
 from .radix_trie import RadixTrie, TrieNode
+
+logger = logging.getLogger("max.pipelines")
 
 PERCENTAGE_BLOCKS_TO_EVICT = 0.05
 
@@ -263,11 +266,18 @@ class PagedKVCacheManager(KVCacheManager):
             )
 
         if max_batch_size > self.total_num_pages:
-            raise RuntimeError(
-                f"Not enough cache memory to support a batch containing {max_batch_size} sequences.\n"
-                f"Need to allocate at least {max_batch_size} blocks, but only have enough memory for {self.total_num_pages} blocks.\n"
-                f"One page requires {single_page_size_bytes} bytes but only {cache_memory_per_device} bytes are available.\n"
-                f"You must restart your process and set a smaller batch size."
+            logger.warning(
+                f"Insufficient cache memory to support a batch containing {max_batch_size} requests with one token per request. "
+                f"Need to allocate at least {max_batch_size} blocks, but only have enough memory for {self.total_num_pages} blocks. "
+                f"One page requires {single_page_size_bytes} bytes but only {cache_memory_per_device} bytes are available."
+            )
+
+        blocks_needed_for_max_seq_len = ceildiv(max_seq_len, page_size)
+        if blocks_needed_for_max_seq_len > self.total_num_pages:
+            logger.warning(
+                f"Insufficient cache memory to support a batch containing one request at the max sequence length of {max_seq_len} tokens. "
+                f"Need to allocate at least {blocks_needed_for_max_seq_len} blocks, but only have enough memory for {self.total_num_pages} blocks. "
+                f"One page requires {single_page_size_bytes} bytes but only {cache_memory_per_device} bytes are available."
             )
 
         # call our base class constructor
