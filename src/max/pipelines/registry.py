@@ -404,10 +404,6 @@ class PipelineRegistry:
 
         model_weights_size = model_cls.estimate_weights_size(pipeline_config)
 
-        weights_str = ""
-        if model_weights_size:
-            weights_str = f"\n\t    Weights:                {_to_mib(model_weights_size)} MiB"
-
         total_size = model_weights_size
         available_kv_cache_memory = max(0, free_memory - model_weights_size)
         available_kv_cache_memory = int(
@@ -423,23 +419,10 @@ class PipelineRegistry:
             pipeline_config.max_length = model_cls.calculate_max_seq_len(
                 pipeline_config
             )
-            max_length_str = f"Auto-inferred max sequence length: {pipeline_config.max_length}"
-        else:
-            max_length_str = (
-                f"Current max sequence length: {pipeline_config.max_length}"
-            )
 
         if not user_provided_max_batch_size:
             pipeline_config.max_batch_size = self._infer_optimal_batch_size(
                 pipeline_config, model_cls, available_kv_cache_memory
-            )
-            max_batch_size_str = f"Auto-inferred max batch size: {pipeline_config.max_batch_size}"
-        else:
-            assert pipeline_config.max_batch_size is not None, (
-                "max_batch_size must be set"
-            )
-            max_batch_size_str = (
-                f"Current max batch size: {pipeline_config.max_batch_size}"
             )
 
         actual_kv_cache_size = self._calculate_kv_cache_size(
@@ -452,10 +435,54 @@ class PipelineRegistry:
 
         total_size += actual_kv_cache_size
 
+        # If the model is too large to fit in memory, and the user did not
+        # specify a max_length, try to infer a value that would fit.
+        if total_size > free_memory and not user_provided_max_length:
+            original_max_length = pipeline_config.max_length
+            (
+                found_valid_max_length,
+                inferred_max_length,
+                _,
+            ) = self._find_valid_max_length(
+                pipeline_config,
+                model_cls,
+                available_kv_cache_memory,
+                user_provided_max_batch_size,
+            )
+
+            if found_valid_max_length:
+                logger.warning(
+                    f"Truncated model's default max_length from {original_max_length} to {inferred_max_length} to fit in memory."
+                )
+                pipeline_config.max_length = inferred_max_length
+                actual_kv_cache_size = self._calculate_kv_cache_size(
+                    model_cls,
+                    pipeline_config,
+                    available_kv_cache_memory,
+                )
+                total_size = model_weights_size + actual_kv_cache_size
+
         if free_memory:
             free_memory_str = f" / {_to_mib(free_memory)} MiB free"
 
-        vram_usage_limit_scale = 0.95
+        weights_str = ""
+        if model_weights_size:
+            weights_str = f"\n\t    Weights:                {_to_mib(model_weights_size)} MiB"
+
+        if not user_provided_max_length:
+            max_length_str = f"Auto-inferred max sequence length: {pipeline_config.max_length}"
+        else:
+            max_length_str = (
+                f"Current max sequence length: {pipeline_config.max_length}"
+            )
+
+        if not user_provided_max_batch_size:
+            max_batch_size_str = f"Auto-inferred max batch size: {pipeline_config.max_batch_size}"
+        else:
+            max_batch_size_str = (
+                f"Current max batch size: {pipeline_config.max_batch_size}"
+            )
+
         logging_str = (
             "\n"
             f"\n\tEstimated memory consumption:"
@@ -466,6 +493,7 @@ class PipelineRegistry:
             f"\n\t{max_batch_size_str}\n"
         )
         logger.info(logging_str)
+        vram_usage_limit_scale = 0.95
 
         if isinstance(free_memory, (int, float)):
             if total_size > free_memory:
