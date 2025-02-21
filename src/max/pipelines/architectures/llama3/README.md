@@ -55,7 +55,7 @@ The easiest way to try out this pipeline is with our Magic command-line tool.
    directory, and you can change to it after cloning:
 
    ```shell
-   cd max/pipelines/python/max/pipelines
+   cd max/src/max/pipelines
    ```
 
 3. Now run the Llama 3.1 text completion demo with the following command:
