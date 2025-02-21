@@ -473,7 +473,7 @@ class PagedKVCacheManager(KVCacheManager):
         all_cache_hit_blocks: set[int] = set()
 
         for seq_id, prompt in seq_ids_and_prompts.items():
-            metadata = self.active_requests.get(seq_id, _PagedCacheMetadata())
+            data = self.active_requests.get(seq_id, _PagedCacheMetadata())
 
             # Extend the kv cache for given request with any cached prefixes.
             cached_blocks: list[int] = []
@@ -481,7 +481,7 @@ class PagedKVCacheManager(KVCacheManager):
                 # Attempt to match all but the last token in the prompt. This is
                 # because the model expects a prompt of length at least 1.
                 _, cached_blocks = self.radix_trie.match_prefix(
-                    prompt[:-1], node=metadata.node
+                    prompt[:-1], node=data.node
                 )
 
             cache_length = self.cache_lengths.get(seq_id, 0)
@@ -491,11 +491,11 @@ class PagedKVCacheManager(KVCacheManager):
             num_pages_required = ceildiv(total_sequence_length, self.page_size)
 
             # Compute the number of *new* pages we need to allocate.
-            assert len(metadata.inflight_blocks) <= 1
+            assert len(data.inflight_blocks) <= 1
             blocks_to_allocate = (
                 num_pages_required
-                - len(metadata.committed_blocks)
-                - len(metadata.inflight_blocks)
+                - len(data.committed_blocks)
+                - len(data.inflight_blocks)
                 - len(cached_blocks)
             )
 
@@ -526,32 +526,32 @@ class PagedKVCacheManager(KVCacheManager):
     def _fetch_prefix_caching(
         self,
         seq_id: int,
-        inflight_metadata: _PagedCacheMetadata,
+        data: _PagedCacheMetadata,
         prompt: np.ndarray,
     ) -> tuple[np.ndarray, list[int]]:
         """Extend the kv cache for given request with any cached prefixes."""
         assert self.radix_trie is not None
         uncommitted_tokens = np.concatenate(
             [
-                inflight_metadata.previous_uncommitted_tokens,
+                data.previous_uncommitted_tokens,
                 prompt,
             ]
         )
         if len(uncommitted_tokens) <= 1:
             return prompt, []
         assert self.cache_lengths[seq_id] == len(
-            inflight_metadata.committed_blocks
-        ) * self.page_size + len(inflight_metadata.previous_uncommitted_tokens)
+            data.committed_blocks
+        ) * self.page_size + len(data.previous_uncommitted_tokens)
 
         # Attempt to match all but the last token in the prompt. This is
         # because the model expects a prompt of length at least 1.
-        inflight_metadata.node, prefix_blocks = self.radix_trie.match_prefix(
-            uncommitted_tokens[:-1], node=inflight_metadata.node
+        data.node, prefix_blocks = self.radix_trie.match_prefix(
+            uncommitted_tokens[:-1], node=data.node
         )
         # Mark the prefix blocks we retrieved from the radix trie cache as
         # in use by this sequence so they don't get evicted prematurely.
-        assert inflight_metadata.node is not None
-        self.radix_trie.mark_in_use_by(inflight_metadata.node, seq_id)
+        assert data.node is not None
+        self.radix_trie.mark_in_use_by(data.node, seq_id)
 
         # Update the cache hit rate metrics.
         num_cache_hit_tokens = len(prefix_blocks) * self.page_size
@@ -559,7 +559,7 @@ class PagedKVCacheManager(KVCacheManager):
         self.ce_all_tokens += len(uncommitted_tokens) - 1
 
         # Add the prefix blocks to the request's cached blocks.
-        inflight_metadata.committed_blocks.extend(prefix_blocks)
+        data.committed_blocks.extend(prefix_blocks)
         self.cache_lengths[seq_id] += num_cache_hit_tokens
 
         # Shorten the previously uncommitted tokens if we got cache hits
@@ -567,31 +567,25 @@ class PagedKVCacheManager(KVCacheManager):
             len(prefix_blocks) * self.page_size :
         ]
         num_prev_uncommitted_left = max(
-            len(inflight_metadata.previous_uncommitted_tokens)
-            - num_cache_hit_tokens,
+            len(data.previous_uncommitted_tokens) - num_cache_hit_tokens,
             0,
         )
-        inflight_metadata.previous_uncommitted_tokens = (
-            inflight_metadata.previous_uncommitted_tokens[
-                :num_prev_uncommitted_left
-            ]
-        )
-        if (
-            inflight_metadata.inflight_blocks
-            and len(inflight_metadata.previous_uncommitted_tokens) == 0
-        ):
-            assert len(inflight_metadata.inflight_blocks) == 1
-            partially_filled = inflight_metadata.inflight_blocks[0]
+        data.previous_uncommitted_tokens = data.previous_uncommitted_tokens[
+            :num_prev_uncommitted_left
+        ]
+        if data.inflight_blocks and len(data.previous_uncommitted_tokens) == 0:
+            assert len(data.inflight_blocks) == 1
+            partially_filled = data.inflight_blocks[0]
             self.release_block(partially_filled, is_committed=False)
-            inflight_metadata.inflight_blocks.clear()
+            data.inflight_blocks.clear()
 
         # Shorten the prompt in place if we got cache hits
         prompt = still_uncommitted_tokens[-len(prompt) :]
 
         # Update the cache length to reflect the new cache hits.
         self.cache_lengths[seq_id] = len(
-            inflight_metadata.committed_blocks
-        ) * self.page_size + len(inflight_metadata.previous_uncommitted_tokens)
+            data.committed_blocks
+        ) * self.page_size + len(data.previous_uncommitted_tokens)
 
         return prompt, prefix_blocks
 
@@ -655,17 +649,17 @@ class PagedKVCacheManager(KVCacheManager):
             assert seq_id not in self.fetch_metadata
 
             # There can at most be one partially filled inflight block.
-            inflight_metadata = self.active_requests[seq_id]
-            if len(inflight_metadata.inflight_blocks) > 1:
+            data = self.active_requests[seq_id]
+            if len(data.inflight_blocks) > 1:
                 # TODO we need a way to invalidate "in-flight" blocks if something goes wrong during execution.
                 # probably via a ``release_failed`` method.
                 raise ValueError(
-                    f"seq_id: {seq_id} already has {len(inflight_metadata.inflight_blocks)} inflight blocks."
+                    f"seq_id: {seq_id} already has {len(data.inflight_blocks)} inflight blocks."
                 )
 
             if self.radix_trie is not None:
                 trimmed_prompt, prefix_blocks = self._fetch_prefix_caching(
-                    seq_id, inflight_metadata, prompt
+                    seq_id, data, prompt
                 )
                 seq_ids_and_prompts[seq_id] = trimmed_prompt
                 all_cache_hit_blocks.update(prefix_blocks)
@@ -677,7 +671,7 @@ class PagedKVCacheManager(KVCacheManager):
         for batch_idx, (seq_id, prompt) in enumerate(
             seq_ids_and_prompts.items()
         ):
-            inflight_metadata = self.active_requests[seq_id]
+            data = self.active_requests[seq_id]
 
             # Get the existing cache length for this sequence.
             cache_length = self.cache_lengths[seq_id]
@@ -693,11 +687,11 @@ class PagedKVCacheManager(KVCacheManager):
             num_pages_required = ceildiv(sequence_length, self.page_size)
 
             # Compute the number of *new* pages we need to allocate.
-            assert len(inflight_metadata.inflight_blocks) <= 1
+            assert len(data.inflight_blocks) <= 1
             num_new_pages = (
                 num_pages_required
-                - len(inflight_metadata.committed_blocks)
-                - len(inflight_metadata.inflight_blocks)
+                - len(data.committed_blocks)
+                - len(data.inflight_blocks)
             )
             blocks_to_allocate_by_seq[seq_id] = num_new_pages
             total_blocks_to_allocate += num_new_pages
@@ -723,17 +717,15 @@ class PagedKVCacheManager(KVCacheManager):
         for batch_idx, (seq_id, num_new_pages) in enumerate(
             blocks_to_allocate_by_seq.items()
         ):
-            inflight_metadata = self.active_requests[seq_id]
+            data = self.active_requests[seq_id]
 
             # Assign some new pages to this request.
             for _ in range(num_new_pages):
                 next_block = self.alloc_block()
-                inflight_metadata.inflight_blocks.append(next_block)
+                data.inflight_blocks.append(next_block)
 
             # Populate the lookup table with the new pages.
-            for i, block_idx in enumerate(
-                inflight_metadata.all_assigned_blocks
-            ):
+            for i, block_idx in enumerate(data.all_assigned_blocks):
                 lut_table_np[batch_idx, i] = block_idx
 
         # Build a tensor of maximum lengths. Each step slices the first row to
@@ -822,24 +814,24 @@ class PagedKVCacheManager(KVCacheManager):
         allowing it to be reused when a new sequence is claimed.
         """
         super().release(seq_id)
-        request_metadata = self.active_requests[seq_id]
+        data = self.active_requests[seq_id]
 
         if self.radix_trie is not None:
             # mark the prefix blocks as not in use by this sequence so they can
             # potentially be evicted when we need more memory
-            assert request_metadata.node is not None
-            self.radix_trie.mark_not_in_use_by(request_metadata.node, seq_id)
+            assert data.node is not None
+            self.radix_trie.mark_not_in_use_by(data.node, seq_id)
 
-        for block in request_metadata.committed_blocks:
+        for block in data.committed_blocks:
             self.release_block(block, is_committed=True)
-        for block in request_metadata.inflight_blocks:
+        for block in data.inflight_blocks:
             self.release_block(block, is_committed=False)
         del self.active_requests[seq_id]
 
     def _step_prefix_caching(
         self,
         seq_id: int,
-        request_metadata: _PagedCacheMetadata,
+        data: _PagedCacheMetadata,
         prompt: np.ndarray,
         new_tokens: np.ndarray,
     ) -> None:
@@ -849,40 +841,36 @@ class PagedKVCacheManager(KVCacheManager):
 
         assert self.radix_trie is not None
         assert self.cache_lengths[seq_id] == len(
-            request_metadata.committed_blocks
-        ) * self.page_size + len(request_metadata.previous_uncommitted_tokens)
+            data.committed_blocks
+        ) * self.page_size + len(data.previous_uncommitted_tokens)
 
         seq_len = self.cache_lengths[seq_id] + len(prompt) + len(new_tokens) - 1
         num_tokens_in_partially_filled_block = seq_len % self.page_size
 
         uncommitted_tokens = np.concatenate(
             [
-                request_metadata.previous_uncommitted_tokens,
+                data.previous_uncommitted_tokens,
                 prompt,
                 new_tokens[:-1],
             ]
         )
         # Try to match the uncommitted tokens in the trie
-        request_metadata.node, existing_blocks = self.radix_trie.match_prefix(
-            uncommitted_tokens, node=request_metadata.node
+        data.node, existing_blocks = self.radix_trie.match_prefix(
+            uncommitted_tokens, node=data.node
         )
 
         # If we computed a kv entry for a token that was already cached,
         # we will just release that block we just computed.
-        for b0, b1 in zip(existing_blocks, request_metadata.inflight_blocks):
+        for b0, b1 in zip(existing_blocks, data.inflight_blocks):
             if b0 != b1:
                 self.release_block(b1, is_committed=False)
 
         # Replace the inflight blocks with the existing prefix blocks.
-        request_metadata.inflight_blocks[: len(existing_blocks)] = (
-            existing_blocks
-        )
+        data.inflight_blocks[: len(existing_blocks)] = existing_blocks
 
         # Commit the rest of the tokens in the trie for use by future
         # sequences.
-        uncommitted_blocks = request_metadata.inflight_blocks[
-            len(existing_blocks) :
-        ]
+        uncommitted_blocks = data.inflight_blocks[len(existing_blocks) :]
         uncommitted_tokens = uncommitted_tokens[
             len(existing_blocks) * self.page_size :
         ]
@@ -898,27 +886,25 @@ class PagedKVCacheManager(KVCacheManager):
             )
             tokens_to_commit = prefix
             blocks_to_commit = blocks_to_commit[:-1]
-            request_metadata.previous_uncommitted_tokens = suffix
+            data.previous_uncommitted_tokens = suffix
         else:
             # Clear out the previous uncommitted tokens
-            request_metadata.previous_uncommitted_tokens = np.array(
-                [], dtype=np.int64
-            )
+            data.previous_uncommitted_tokens = np.array([], dtype=np.int64)
 
         assert len(tokens_to_commit) == len(blocks_to_commit) * self.page_size
 
         # If there are any tokens to commit, insert them into the radix
         # trie.
-        request_metadata.node = self.radix_trie.insert(
+        data.node = self.radix_trie.insert(
             tokens_to_commit,
             blocks_to_commit,
-            node=request_metadata.node,
+            node=data.node,
         )
 
         # Mark the recently committed blocks as in use by this sequence
         # so they don't get evicted prematurely.
-        assert request_metadata.node is not None
-        self.radix_trie.mark_in_use_by(request_metadata.node, seq_id)
+        assert data.node is not None
+        self.radix_trie.mark_in_use_by(data.node, seq_id)
 
     def _step(
         self,
@@ -935,7 +921,7 @@ class PagedKVCacheManager(KVCacheManager):
             if seq_id not in self.active_requests:
                 raise ValueError(f"seq_id: {seq_id} not in active requests.")
 
-            request_metadata = self.active_requests[seq_id]
+            data = self.active_requests[seq_id]
             fetch_metadata = self.fetch_metadata[seq_id]
             prompt = fetch_metadata.prompt
             num_steps = fetch_metadata.num_steps
@@ -947,13 +933,11 @@ class PagedKVCacheManager(KVCacheManager):
             num_tokens_in_partially_filled_block = seq_len % self.page_size
 
             if self.radix_trie is not None:
-                self._step_prefix_caching(
-                    seq_id, request_metadata, prompt, new_tokens
-                )
+                self._step_prefix_caching(seq_id, data, prompt, new_tokens)
 
             expected_num_pages = ceildiv(seq_len, self.page_size)
-            actual_num_pages = len(request_metadata.inflight_blocks) + len(
-                request_metadata.committed_blocks
+            actual_num_pages = len(data.inflight_blocks) + len(
+                data.committed_blocks
             )
 
             if expected_num_pages != actual_num_pages:
@@ -964,16 +948,12 @@ class PagedKVCacheManager(KVCacheManager):
             if num_tokens_in_partially_filled_block > 0:
                 # Leave one partially filled block in the inflight blocks
                 # and finish committing the rest.
-                partially_filled_block = request_metadata.inflight_blocks[-1]
-                request_metadata.committed_blocks.extend(
-                    request_metadata.inflight_blocks[:-1]
-                )
+                partially_filled_block = data.inflight_blocks[-1]
+                data.committed_blocks.extend(data.inflight_blocks[:-1])
                 # This mutates the list in place.
-                request_metadata.inflight_blocks.clear()
-                request_metadata.inflight_blocks.append(partially_filled_block)
+                data.inflight_blocks.clear()
+                data.inflight_blocks.append(partially_filled_block)
             else:
                 # Commit all of the inflight blocks.
-                request_metadata.committed_blocks.extend(
-                    request_metadata.inflight_blocks
-                )
-                request_metadata.inflight_blocks.clear()
+                data.committed_blocks.extend(data.inflight_blocks)
+                data.inflight_blocks.clear()
