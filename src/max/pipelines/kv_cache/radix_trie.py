@@ -107,6 +107,16 @@ class TrieNode:
         assert target[:prefix_len] == key[:prefix_len]
         return self.children[tuple(key)].blocks[0], prefix_len
 
+    def get_prefix_tokens_and_blocks(self) -> Tuple[np.ndarray, List[BlockId]]:
+        curr: Optional[TrieNode] = self
+        tokens: List[TokenId] = []
+        blocks: List[BlockId] = []
+        while curr is not None:
+            tokens.extend(curr.tokens[::-1])
+            blocks.extend(curr.blocks[::-1])
+            curr = curr.parent
+        return np.array(tokens, dtype=np.int64)[::-1], blocks[::-1]
+
 
 class LRUCache(OrderedDict):
     """Least recently used block cache to support O(1) eviction operations."""

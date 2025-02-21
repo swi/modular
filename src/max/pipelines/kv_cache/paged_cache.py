@@ -238,6 +238,10 @@ class _PagedCacheMetadata:
         return self.blocks[self.committed_idx // self.page_size : self.seq_len]
 
     @property
+    def committed_tokens(self) -> np.ndarray:
+        return self.tokens[: self.committed_idx]
+
+    @property
     def uncached_tokens(self) -> np.ndarray:
         return self.tokens[self.cached_idx : self.seq_len]
 
@@ -329,6 +333,7 @@ class PagedKVCacheManager(KVCacheManager):
         session: InferenceSession,
         cache_memory: int,
         page_size: int = 128,
+        enable_runtime_checks: bool = False,
     ):
         """
         Args:
@@ -342,6 +347,7 @@ class PagedKVCacheManager(KVCacheManager):
             cache_memory: The total amount of memory available for caching.
                 This is aggregated across all devices.
             page_size: The number of tokens that will be stored in a single page.
+            enable_runtime_checks: Whether to enable runtime correctness checks.
         """
         # The number of tokens in a single page.
         self.page_size = page_size
@@ -428,6 +434,28 @@ class PagedKVCacheManager(KVCacheManager):
                 )
         self.ce_all_tokens = 0
         self.ce_cache_hit_tokens = 0
+
+        # Whether to enable runtime correctness checks. These correctness checks
+        # are expensive and should only be used in tests.
+        self.enable_runtime_checks = enable_runtime_checks
+
+    def _runtime_check(self) -> None:
+        if not self.enable_runtime_checks:
+            return
+        assert self._count_all_pages() == self.total_num_pages
+        if self.radix_trie is None:
+            return
+        for data in self.active_requests.values():
+            # Check that the committed tokens and blocks match what was actually
+            # committed into the radix trie.
+            if data.node is not None:
+                # Climb up the trie from the given node, accumulating all the
+                # prefix tokens and blocks.
+                tokens, blocks = data.node.get_prefix_tokens_and_blocks()
+            else:
+                tokens, blocks = np.array([], dtype=np.int64), []
+            assert (tokens == data.committed_tokens).all()
+            assert blocks == data.committed_blocks
 
     def cache_hit_rate(self) -> float:
         """Returns the prefix cache hit rate.
@@ -710,6 +738,8 @@ class PagedKVCacheManager(KVCacheManager):
         input `seq_ids_and_prompts` will be modified. Each prompt will be shortened to only include the tokens
         for which we do not have a cached KV entry. Note that we will never return a empty prompt.
         """
+        self._runtime_check()
+
         max_seq_len_in_batch = -1
         # before we start making any changes, validate that we won't over-write the cache
         for batch_idx, (seq_id, prompt) in enumerate(
@@ -839,6 +869,8 @@ class PagedKVCacheManager(KVCacheManager):
                     max_lengths_host,
                 )
             )
+
+        self._runtime_check()
 
         return ret_list
 
@@ -983,6 +1015,8 @@ class PagedKVCacheManager(KVCacheManager):
         downstream in `fetch` to track what section of memory should
         be used in the kernels.
         """
+        self._runtime_check()
+
         for seq_id, new_tokens in seq_ids_and_new_tokens.items():
             if seq_id not in self.active_requests:
                 raise ValueError(f"seq_id: {seq_id} not in active requests.")
@@ -1001,3 +1035,5 @@ class PagedKVCacheManager(KVCacheManager):
                 raise ValueError(
                     f"Mismatch between expected and actual number of pages for seq_id: {seq_id}. Expected: {expected_num_pages}, Actual: {actual_num_pages}"
                 )
+
+        self._runtime_check()
