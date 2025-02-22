@@ -31,10 +31,8 @@ from ..attention.interfaces import (
     AttentionImplV2,
 )
 from ..embedding import Embedding, EmbeddingV2
-from ..layer import LayerList, LayerV2
-from ..linear import MLP, MLPV2, Linear, LinearV2
-from ..norm import LayerNorm, RMSNorm, RMSNormV2
-from ..sequential import Sequential
+from ..layer import Layer, LayerList, LayerV2
+from ..linear import Linear, LinearV2
 
 
 class TransformerBlock(LayerV2):
@@ -43,15 +41,15 @@ class TransformerBlock(LayerV2):
     def __init__(
         self,
         attention: AttentionImpl | AttentionImplV2 | AttentionImplQKV,
-        mlp: MLP | MLPV2 | Sequential,
-        attention_norm: RMSNorm | RMSNormV2 | LayerNorm,
-        mlp_norm: RMSNorm | RMSNormV2 | LayerNorm,
+        mlp: Layer,
+        attention_norm: Layer,
+        mlp_norm: Layer,
     ):
         super().__init__()
-        self.attention = attention
+        self.self_attn = attention
         self.mlp = mlp
-        self.attention_norm = attention_norm
-        self.mlp_norm = mlp_norm
+        self.input_layernorm = attention_norm
+        self.post_attention_layernorm = mlp_norm
 
     def __call__(
         self,
@@ -60,14 +58,14 @@ class TransformerBlock(LayerV2):
         | PagedKVCacheCollection,
         **kwargs,
     ) -> TensorValue:
-        attn_out = self.attention(
-            self.attention_norm(x),
+        attn_out = self.self_attn(
+            self.input_layernorm(x),
             kv_collection,
             **kwargs,
         )
 
         h = x + attn_out
-        h = h + self.mlp(self.mlp_norm(h))
+        h = h + self.mlp(self.post_attention_layernorm(h))
 
         return h
 
@@ -80,7 +78,7 @@ class Transformer(LayerV2):
         dim: int,
         n_heads: int,
         layers: list[TransformerBlock],
-        norm: RMSNorm | RMSNormV2 | LayerNorm,
+        norm: Layer,
         output: Linear | LinearV2,
         embedding: Embedding | EmbeddingV2,
         kv_params: KVCacheParams,
@@ -95,8 +93,8 @@ class Transformer(LayerV2):
         self.n_heads = n_heads
         self.layers = LayerList(layers)
         self.norm = norm
-        self.output = output
-        self.embedding = embedding
+        self.lm_head = output
+        self.embed_tokens = embedding
         self.kv_params = kv_params
         self.kv_collection_constructor = kv_collection_constructor
         self.all_logits = all_logits
@@ -108,7 +106,7 @@ class Transformer(LayerV2):
         **kwargs,
     ) -> tuple[TensorValue, ...]:
         # TODO: Split into a ragged and non-ragged version.
-        h = self.embedding(tokens)
+        h = self.embed_tokens(tokens)
 
         kv_collection = self.kv_collection_constructor(*kv_cache_inputs)
 
@@ -129,10 +127,10 @@ class Transformer(LayerV2):
             last_tokens = ops.gather_nd(normalized, indices, batch_dims=1)
 
         # Always return float32 logits, no matter the activation type.
-        last_token_logits = ops.cast(self.output(last_tokens), DType.float32)
+        last_token_logits = ops.cast(self.lm_head(last_tokens), DType.float32)
 
         if self.all_logits:
-            all_logits = ops.cast(self.output(normalized), DType.float32)
+            all_logits = ops.cast(self.lm_head(normalized), DType.float32)
             return (last_token_logits, all_logits)
 
         return (last_token_logits,)

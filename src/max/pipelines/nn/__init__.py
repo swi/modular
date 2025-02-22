@@ -22,14 +22,15 @@ from .attention import (
     AttentionWithRopeV2,
     DistributedAttentionImpl,
     DistributedAttentionWithRope,
+    GPTQAttentionWithRope,
     NaiveAttentionWithRope,
 )
 from .conv import Conv1D, Conv2D, Conv3D
 from .embedding import Embedding, EmbeddingV2
 from .kernels import MHAMaskVariant
 from .layer import Layer, LayerV2
-from .linear import MLP, MLPV2, DistributedMLP, Linear, LinearV2, linear_class
-from .norm import DistributedRMSNorm, LayerNorm, RMSNorm, RMSNormV2
+from .linear import MLP, MLPV2, DistributedMLP, GPTQLinearV2, Linear, LinearV2
+from .norm import DistributedRMSNorm, LayerNorm, LayerNormV2, RMSNorm, RMSNormV2
 from .rotary_embedding import OptimizedRotaryEmbedding, RotaryEmbedding
 from .sequential import Sequential
 from .transformer import (
@@ -55,15 +56,17 @@ __all__ = [
     "DistributedTransformer",
     "DistributedTransformerBlock",
     "NaiveAttentionWithRope",
+    "GPTQAttentionWithRope",
     "Conv1D",
     "Conv2D",
     "Conv3D",
     "Embedding",
     "EmbeddingV2",
+    "GPTQLinearV2",
     "Linear",
     "LinearV2",
-    "linear_class",
     "LayerNorm",
+    "LayerNormV2",
     "MHAMaskVariant",
     "MLP",
     "MLPV2",

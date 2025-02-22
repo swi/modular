@@ -71,7 +71,7 @@ class LayerList(LayerV2):
         return iter(self.layers)
 
     def __call__(self, *args, **kwargs) -> TensorValue:
-        x = self.layers[0](*args, **kwargs)  # type: ignore
+        x = self.layers[0](*args, **kwargs)
         for layer in self.layers[1:]:
-            x = layer(x)  # type: ignore
+            x = layer(x)
         return x

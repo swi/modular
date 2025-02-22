@@ -22,7 +22,7 @@ from io import StringIO
 from typing import Callable, Optional, Type, Union, cast
 
 import torch
-from max.graph.weights import WeightsConverter
+from max.graph.weights import WeightsAdapter
 
 from .config import (
     PipelineConfig,
@@ -83,9 +83,7 @@ class SupportedArchitecture:
         tokenizer: Type[Union[TextTokenizer, TextAndVisionTokenizer]],
         default_weights_format: WeightsFormat,
         rope_type: RopeType = RopeType.none,
-        weight_converters: (
-            dict[WeightsFormat, Type[WeightsConverter]] | None
-        ) = None,
+        weight_adapters: dict[WeightsFormat, WeightsAdapter] | None = None,
     ):
         """Initializes a model architecture supported by MAX pipelines.
 
@@ -112,7 +110,7 @@ class SupportedArchitecture:
         self.tokenizer = tokenizer
         self.default_weights_format = default_weights_format
         self.rope_type = rope_type
-        self.weight_converters = weight_converters or {}
+        self.weight_adapters = weight_adapters or {}
         self.task = task
 
 
@@ -282,6 +280,9 @@ class PipelineRegistry:
 
         pipeline_config.finalize_encoding_config()
 
+        # Pass weight adapters to the PipelineConfig.
+        pipeline_config._weight_adapters = arch.weight_adapters
+
         # We should now have a valid quantization_encoding, and possibly a weight_path.
         # If no weight_path is provided, we should grab the default.
         if not pipeline_config.weight_path:
@@ -303,17 +304,9 @@ class PipelineRegistry:
                 arch.default_weights_format, []
             ):
                 pipeline_config.weight_path = default_weight_files
-            else:
-                for (
-                    converter_format,
-                    converter,
-                ) in arch.weight_converters.items():
-                    if converter_format_files := weight_files.get(
-                        converter_format, []
-                    ):
-                        pipeline_config.weight_path = converter_format_files
-                        pipeline_config._weights_converter = converter
-                        break
+            elif weight_files:
+                # Load any available weight file.
+                pipeline_config.weight_path = next(iter(weight_files.values()))
 
         if not pipeline_config.weight_path:
             if pipeline_config.quantization_encoding not in [
@@ -323,11 +316,7 @@ class PipelineRegistry:
                 msg = f"compatible weights cannot be found for '{pipeline_config.quantization_encoding}' in 'gguf' format, in the provided repo: '{huggingface_weights_repo.repo_id}'"
                 raise ValueError(msg)
             else:
-                formats = [str(arch.default_weights_format)] + [
-                    str(converter)
-                    for converter in arch.weight_converters.keys()
-                ]
-                msg = f"compabible weights cannot be found for '{pipeline_config.quantization_encoding}' in any supported format: [{', '.join(formats)}], in the provided repo: '{huggingface_weights_repo.repo_id}'"
+                msg = f"compatible weights cannot be found for '{pipeline_config.quantization_encoding}'"
                 raise ValueError(msg)
 
         # Check supported_cache_strategy

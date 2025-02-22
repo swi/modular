@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import List, Literal, Sequence, cast
+from typing import Any, List, Literal, Sequence, cast
 
 import numpy as np
 from max.driver import CPU, Device, Tensor
@@ -29,8 +29,10 @@ from max.pipelines import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
+    RopeType,
     SupportedEncoding,
     TextContext,
+    WeightsFormat,
     upper_bounded_default,
 )
 from max.pipelines.dataprocessing import batch_padded_tokens_and_mask
@@ -42,12 +44,9 @@ from max.pipelines.kv_cache import (
 )
 from max.pipelines.nn.compute_log_probabilities import compute_log_probabilities
 
-from .gguf import (
-    NaiveTransformer,
-    Transformer,
-    distributed_transformer_opaque,
-    transformer,
-)
+from .gguf import distributed_transformer_opaque
+from .llama3 import Llama3
+from .naive_llama3 import NaiveLlama3
 
 logger = logging.getLogger("max.pipelines")
 
@@ -105,6 +104,9 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
     norm_method: Literal["rms_norm"] | Literal["layer_norm"]
     """Normalization layer."""
+
+    state_dict: dict[str, Any]
+    """Weights to load into the model."""
 
     def __init__(
         self, pipeline_config: PipelineConfig, session: InferenceSession
@@ -349,9 +351,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
             logger.info("Building and compiling model...")
             before = time.perf_counter()
             graph = self._build_graph(self._weights)
-            model = session.load(
-                graph, weights_registry=self._weights.allocated_weights
-            )
+            model = session.load(graph, weights_registry=self.state_dict)
             after = time.perf_counter()
             logger.info(
                 f"Building and compiling model took {after - before:.6f} seconds"
@@ -425,6 +425,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                     kv_params=self.get_kv_params(self.pipeline_config),
                     norm_method=self.norm_method,
                 )
+                self.state_dict = weights.allocated_weights
                 tokens, input_row_offsets, *variadic_args = graph.inputs
 
                 # Multi-GPU passes a signal buffer per device: unmarshal those.
@@ -450,6 +451,73 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 graph.output(*outputs)
                 return graph
         else:
+            adapter = self.pipeline_config._weight_adapters.get(
+                self.pipeline_config.weights_format
+            )
+            if adapter:
+                state_dict = adapter(
+                    dict(weights.items()),
+                    huggingface_config=self.pipeline_config.huggingface_config,
+                    pipeline_config=self.pipeline_config,
+                )
+            else:
+                state_dict = {
+                    key: value.data() for key, value in weights.items()
+                }
+
+            if (
+                rope_freqs := state_dict.pop("rope_freqs.weight", None)
+            ) is not None:
+                rope_scaling = rope_freqs.data
+            else:
+                rope_scaling = None
+
+            interleaved_rope_weights = (
+                self.pipeline_config.weights_format == WeightsFormat.gguf
+                and self.pipeline_config.rope_type == RopeType.normal
+            )
+            rms_norm_eps = None
+            if self.norm_method == "rms_norm":
+                if (
+                    self.pipeline_config.huggingface_config.model_type
+                    == "exaone"
+                ):
+                    rms_norm_eps = self.pipeline_config.huggingface_config.layer_norm_epsilon
+                else:
+                    rms_norm_eps = (
+                        self.pipeline_config.huggingface_config.rms_norm_eps
+                    )
+
+            device_refs = [
+                DeviceRef(spec.device_type, spec.id)
+                for spec in self.pipeline_config.device_specs
+            ]
+
+            nn_model = Llama3(
+                hidden_size=self.pipeline_config.huggingface_config.hidden_size,
+                num_attention_heads=self.pipeline_config.huggingface_config.num_attention_heads,
+                num_key_value_heads=self.pipeline_config.huggingface_config.num_key_value_heads,
+                num_hidden_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
+                rope_theta=self.pipeline_config.huggingface_config.rope_theta,
+                rms_norm_eps=rms_norm_eps,
+                intermediate_size=self.pipeline_config.huggingface_config.intermediate_size,
+                interleaved_rope_weights=interleaved_rope_weights,
+                rope_scaling=rope_scaling,
+                vocab_size=self.pipeline_config.huggingface_config.vocab_size,
+                dtype=self.pipeline_config.dtype,
+                quantization_encoding=self.pipeline_config.graph_quantization_encoding,
+                quantization_config=self.pipeline_config._quant_config,
+                all_logits=self.pipeline_config.enable_echo,
+                max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
+                kv_params=self.get_kv_params(self.pipeline_config),
+                norm_method=self.norm_method,
+                share_embedding_weights="lm_head.weight" not in state_dict,
+                stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
+                stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
+                devices=device_refs,
+            )
+            nn_model.load_state_dict(state_dict)
+            self.state_dict = nn_model.state_dict()
             with Graph(
                 "llama3",
                 input_types=[
@@ -458,20 +526,8 @@ class LlamaModelBase(PipelineModel[TextContext]):
                     *self.kv_manager.input_symbols()[0],
                 ],
             ) as graph:
-                model = transformer(
-                    graph=graph,
-                    pipeline_config=self.pipeline_config,
-                    weights=weights,
-                    max_seq_len=self.calculate_max_seq_len(
-                        self.pipeline_config
-                    ),
-                    kv_params=self.get_kv_params(self.pipeline_config),
-                    norm_method=self.norm_method,
-                )
-                assert isinstance(model, Transformer)
-
                 tokens, input_row_offsets, *kv_cache_inputs = graph.inputs
-                outputs = model(
+                outputs = nn_model(
                     tokens.tensor,
                     [inp.tensor for inp in kv_cache_inputs],
                     input_row_offsets=input_row_offsets,
@@ -495,6 +551,73 @@ class LlamaModelBase(PipelineModel[TextContext]):
 
         kv_inputs = self.kv_manager.input_symbols()[0]
 
+        interleaved_rope_weights = (
+            self.pipeline_config.weights_format == WeightsFormat.gguf
+            and self.pipeline_config.rope_type == RopeType.normal
+        )
+        adapter = self.pipeline_config._weight_adapters.get(
+            self.pipeline_config.weights_format
+        )
+        if adapter:
+            state_dict = adapter(
+                dict(weights.items()),
+                huggingface_config=self.pipeline_config.huggingface_config,
+                pipeline_config=self.pipeline_config,
+            )
+        else:
+            state_dict = {key: value.data() for key, value in weights.items()}
+        if (
+            rope_freqs := state_dict.pop("rope_freqs.weight", None)
+        ) is not None:
+            rope_scaling = rope_freqs.data
+        else:
+            rope_scaling = None
+
+        rms_norm_eps = None
+        if self.norm_method == "rms_norm":
+            if self.pipeline_config.huggingface_config.model_type == "exaone":
+                rms_norm_eps = (
+                    self.pipeline_config.huggingface_config.layer_norm_epsilon
+                )
+            else:
+                rms_norm_eps = (
+                    self.pipeline_config.huggingface_config.rms_norm_eps
+                )
+
+        device_refs = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in self.pipeline_config.device_specs
+        ]
+        nn_model = NaiveLlama3(
+            hidden_size=self.pipeline_config.huggingface_config.hidden_size,
+            num_attention_heads=self.pipeline_config.huggingface_config.num_attention_heads,
+            num_key_value_heads=self.pipeline_config.huggingface_config.num_key_value_heads,
+            num_hidden_layers=self.pipeline_config.huggingface_config.num_hidden_layers,
+            rope_theta=self.pipeline_config.huggingface_config.rope_theta,
+            rms_norm_eps=rms_norm_eps,
+            intermediate_size=self.pipeline_config.huggingface_config.intermediate_size,
+            interleaved_rope_weights=interleaved_rope_weights,
+            rope_scaling=rope_scaling,
+            vocab_size=self.pipeline_config.huggingface_config.vocab_size,
+            dtype=self.pipeline_config.dtype,
+            quantization_encoding=self.pipeline_config.graph_quantization_encoding,
+            quantization_config=self.pipeline_config._quant_config,
+            max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
+            kv_params=self.get_kv_params(self.pipeline_config),
+            norm_method=self.norm_method,
+            share_embedding_weights="lm_head.weight" not in state_dict,
+            stacked_mlp="layers.0.mlp.gate_up_proj.weight" in state_dict,
+            stacked_qkv="layers.0.self_attn.qkv_proj.weight" in state_dict,
+            devices=device_refs,
+        )
+
+        # Load weights. We allow the weight types to be overriden due to
+        # multiple quantization enodings in GGUF checkpoints.
+        nn_model.load_state_dict(
+            state_dict, override_quantization_encoding=True
+        )
+        self.state_dict = nn_model.state_dict()
+
         with Graph(
             "llama3",
             input_types=[
@@ -503,16 +626,6 @@ class LlamaModelBase(PipelineModel[TextContext]):
                 *kv_inputs,
             ],
         ) as graph:
-            model = transformer(
-                graph=graph,
-                pipeline_config=self.pipeline_config,
-                weights=weights,
-                max_seq_len=self.calculate_max_seq_len(self.pipeline_config),
-                kv_params=self.get_kv_params(self.pipeline_config),
-                norm_method=self.norm_method,
-            )
-            assert isinstance(model, NaiveTransformer)
-
             tokens, attention_mask, k_cache, v_cache, start_pos, _ = (
                 graph.inputs
             )
@@ -529,7 +642,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
                     else DType.bfloat16
                 )
             )
-            logits = model(
+            logits = nn_model(
                 tokens.tensor,
                 attention_mask.tensor.cast(mask_dtype),
                 k_cache.buffer,

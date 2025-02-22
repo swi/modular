@@ -18,6 +18,7 @@ from .attention_with_rope import (
     AttentionWithRopeQKV,
     AttentionWithRopeV2,
     DistributedAttentionWithRope,
+    GPTQAttentionWithRope,
 )
 from .attention_without_mask import AttentionWithoutMask
 from .interfaces import (
@@ -39,4 +40,5 @@ __all__ = [
     "AttentionWithoutMask",
     "NaiveAttentionWithRope",
     "AttentionWithRopeV2",
+    "GPTQAttentionWithRope",
 ]

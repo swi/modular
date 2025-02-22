@@ -12,16 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 """Builds a Llama3 model that uses naive KV-caching."""
 
-from typing import Optional, Union
+from __future__ import annotations
+
+import functools
+from typing import Callable, Literal, Optional, Union
 
 import numpy as np
 from max.dtype import DType
-from max.graph import DeviceRef
-from max.graph.quantization import QuantizationEncoding
+from max.graph import DeviceRef, TensorValue, ops
+from max.graph.quantization import QuantizationConfig, QuantizationEncoding
 from max.pipelines.kv_cache import KVCacheParams
 from max.pipelines.nn import (
     MLPV2,
     EmbeddingV2,
+    GPTQLinearV2,
+    LayerV2,
     LinearV2,
     NaiveAttentionWithRope,
     NaiveTransformer,
@@ -29,8 +34,34 @@ from max.pipelines.nn import (
     OptimizedRotaryEmbedding,
     RMSNormV2,
     RotaryEmbedding,
-    linear_class,
 )
+
+
+class ConstantLayerNorm(LayerV2):
+    """Layer normalization block with constant gamma and beta values."""
+
+    gamma: np.ndarray
+    beta: np.ndarray
+    eps: float = 1e-5
+
+    def __init__(self, dims, eps: float = 1e-5):
+        super().__init__()
+        self.gamma = np.ones(dims)
+        self.beta = np.zeros(dims)
+        self.eps = eps
+
+    def __call__(self, input: TensorValue):
+        gamma = ops.constant(self.gamma, DType.float32)
+        beta = ops.constant(self.beta, DType.float32)
+        return ops.cast(
+            ops.layer_norm(
+                ops.cast(input, DType.float32),
+                gamma=gamma,
+                beta=beta,
+                epsilon=self.eps,
+            ),
+            input.dtype,
+        )
 
 
 class NaiveLlama3(NaiveTransformer):
@@ -43,15 +74,25 @@ class NaiveLlama3(NaiveTransformer):
         num_hidden_layers: int,
         rope_theta: float,
         max_seq_len: int,
-        rms_norm_eps: float,
+        rms_norm_eps: Optional[float],
         intermediate_size: int,
         interleaved_rope_weights: bool,
         rope_scaling: Optional[np.ndarray],
         vocab_size: int,
         dtype: DType,
-        quantization_encoding: QuantizationEncoding,
+        quantization_encoding: Optional[QuantizationEncoding],
+        quantization_config: Optional[QuantizationConfig],
         kv_params: KVCacheParams,
+        norm_method: Literal["rms_norm"] | Literal["layer_norm"],
+        share_embedding_weights: bool,
+        stacked_mlp: bool,
+        stacked_qkv: bool,
+        devices: list[DeviceRef],
     ):
+        if stacked_qkv:
+            raise ValueError(
+                "Stacked QKV is not supported with naive caching strategy."
+            )
         rope = RotaryEmbedding(
             dim=hidden_size,
             n_heads=num_attention_heads,
@@ -61,7 +102,27 @@ class NaiveLlama3(NaiveTransformer):
             interleaved=interleaved_rope_weights,
         )
 
-        linear_cls = linear_class(quantization_encoding)
+        create_norm: Callable[..., LayerV2]
+        if norm_method == "rms_norm":
+            if rms_norm_eps is None:
+                raise ValueError(
+                    "rms_norm_eps cannot be None for model that uses RMSNorm."
+                )
+            create_norm = functools.partial(
+                RMSNormV2, hidden_size, rms_norm_eps
+            )
+        else:
+            create_norm = functools.partial(ConstantLayerNorm, hidden_size)
+
+        linear_cls: Callable[..., LinearV2]
+        if quantization_config:
+            linear_cls = functools.partial(
+                GPTQLinearV2, quantization_config=quantization_config
+            )
+        else:
+            linear_cls = LinearV2
+
+        mlp_cls = StackedMLP if stacked_mlp else Llama3MLP
         layers = [
             NaiveTransformerBlock(
                 attention=NaiveLLama3Attention(
@@ -73,22 +134,18 @@ class NaiveLlama3(NaiveTransformer):
                     dtype,
                     quantization_encoding,
                     linear_cls,
+                    device=devices[0],
                 ),
-                mlp=Llama3FeedForward(
+                mlp=mlp_cls(
                     dtype,
                     quantization_encoding,
                     hidden_size,
                     intermediate_size,
                     linear_cls,
+                    devices=devices,
                 ),
-                attention_norm=RMSNormV2(
-                    hidden_size,
-                    rms_norm_eps,
-                ),
-                mlp_norm=RMSNormV2(
-                    hidden_size,
-                    rms_norm_eps,
-                ),
+                attention_norm=create_norm(),
+                mlp_norm=create_norm(),
             )
             for i in range(num_hidden_layers)
         ]
@@ -97,26 +154,25 @@ class NaiveLlama3(NaiveTransformer):
             vocab_size,
             hidden_size,
             dtype,
-            DeviceRef.CPU(),
+            devices[0],
             quantization_encoding=quantization_encoding,
         )
 
-        output = linear_cls(
-            vocab_size,
+        output = LinearV2(
             hidden_size,
+            vocab_size,
             dtype,
-            DeviceRef.CPU(),
+            devices[0],
             quantization_encoding=quantization_encoding,
         )
+        if share_embedding_weights:
+            output.set_shared_weight("weight", embedding_layer.weight)
 
         super().__init__(
             dim=hidden_size,
             n_heads=num_attention_heads,
             layers=layers,
-            norm=RMSNormV2(
-                hidden_size,
-                rms_norm_eps,
-            ),
+            norm=create_norm(),
             output=output,
             theta=rope_theta,
             embedding=embedding_layer,
@@ -133,7 +189,8 @@ class NaiveLLama3Attention(NaiveAttentionWithRope):
         rope: Union[OptimizedRotaryEmbedding, RotaryEmbedding],
         dtype: DType,
         quantization_encoding: Optional[QuantizationEncoding],
-        linear_cls: type[LinearV2],
+        linear_cls: Callable[..., LinearV2],
+        device: DeviceRef,
     ):
         kv_weight_dim = (
             hidden_size // num_attention_heads
@@ -144,66 +201,102 @@ class NaiveLLama3Attention(NaiveAttentionWithRope):
             kv_params=kv_params,
             dim=hidden_size,
             wk=linear_cls(
-                in_dim=kv_weight_dim,
-                out_dim=hidden_size,
+                in_dim=hidden_size,
+                out_dim=kv_weight_dim,
                 dtype=dtype,
-                device=DeviceRef.CPU(),
+                device=device,
                 quantization_encoding=quantization_encoding,
             ),
             wv=linear_cls(
-                in_dim=kv_weight_dim,
-                out_dim=hidden_size,
+                in_dim=hidden_size,
+                out_dim=kv_weight_dim,
                 dtype=dtype,
-                device=DeviceRef.CPU(),
+                device=device,
                 quantization_encoding=quantization_encoding,
             ),
             wq=linear_cls(
                 in_dim=hidden_size,
                 out_dim=hidden_size,
                 dtype=dtype,
-                device=DeviceRef.CPU(),
+                device=device,
                 quantization_encoding=quantization_encoding,
             ),
             wo=linear_cls(
                 in_dim=hidden_size,
                 out_dim=hidden_size,
                 dtype=dtype,
-                device=DeviceRef.CPU(),
+                device=device,
                 quantization_encoding=quantization_encoding,
             ),
             rope=rope,
         )
 
 
-class Llama3FeedForward(MLPV2):
+class Llama3MLP(MLPV2):
     def __init__(
         self,
         dtype: DType,
         quantization_encoding: Optional[QuantizationEncoding],
         hidden_dim: int,
         feed_forward_length: int,
-        linear_cls: type[LinearV2],
+        linear_cls: Callable[..., LinearV2],
+        devices: list[DeviceRef] = [],
     ):
         super().__init__(
             gate_proj=linear_cls(
-                in_dim=feed_forward_length,
-                out_dim=hidden_dim,
-                dtype=dtype,
-                device=DeviceRef.CPU(),
-                quantization_encoding=quantization_encoding,
-            ),
-            down_proj=linear_cls(
                 in_dim=hidden_dim,
                 out_dim=feed_forward_length,
                 dtype=dtype,
-                device=DeviceRef.CPU(),
+                device=devices[0] if devices else None,
                 quantization_encoding=quantization_encoding,
             ),
-            up_proj=linear_cls(
+            down_proj=linear_cls(
                 in_dim=feed_forward_length,
                 out_dim=hidden_dim,
                 dtype=dtype,
-                device=DeviceRef.CPU(),
+                device=devices[0] if devices else None,
+                quantization_encoding=quantization_encoding,
+            ),
+            up_proj=linear_cls(
+                in_dim=hidden_dim,
+                out_dim=feed_forward_length,
+                dtype=dtype,
+                device=devices[0] if devices else None,
                 quantization_encoding=quantization_encoding,
             ),
         )
+
+
+class StackedMLP(LayerV2):
+    def __init__(
+        self,
+        dtype: DType,
+        quantization_encoding: Optional[QuantizationEncoding],
+        hidden_dim: int,
+        feed_forward_length: int,
+        linear_cls: Callable[..., LinearV2],
+        devices: list[DeviceRef] = [],
+    ):
+        super().__init__()
+        self.gate_up_proj = linear_cls(
+            in_dim=hidden_dim,
+            out_dim=feed_forward_length * 2,
+            dtype=dtype,
+            device=devices[0] if devices else None,
+            quantization_encoding=quantization_encoding,
+        )
+        self.down_proj = linear_cls(
+            in_dim=feed_forward_length,
+            out_dim=hidden_dim,
+            dtype=dtype,
+            device=devices[0] if devices else None,
+            quantization_encoding=quantization_encoding,
+        )
+
+    def __call__(self, x: TensorValue) -> TensorValue:
+        up_states = self.gate_up_proj(x)
+
+        gate = up_states[:, : up_states.shape.static_dims[0] // 2]
+        up_states = up_states[:, up_states.shape.static_dims[0] // 2 :]
+
+        return self.down_proj(ops.silu(gate) * up_states)

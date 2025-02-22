@@ -357,7 +357,7 @@ class MPNetEncoder(Layer):
     ) -> TensorValue:
         position_bias = self.compute_position_bias(hidden_states)
         for layer in self.layer.layers:
-            hidden_states = layer(  # type: ignore
+            hidden_states = layer(
                 hidden_states,
                 attention_mask,
                 position_bias,

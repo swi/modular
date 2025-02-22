@@ -21,12 +21,8 @@ from max.pipelines import (
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 
+from . import weight_adapters
 from .model import Llama3Model, OlmoModel, Phi3Model
-from .safetensor_converter import (
-    ExaoneSafetensorAdapter,
-    LlamaSafetensorAdapter,
-    PhiSafetensorAdapter,
-)
 
 llama_arch = SupportedArchitecture(
     name="LlamaForCausalLM",
@@ -43,7 +39,6 @@ llama_arch = SupportedArchitecture(
     supported_encodings={
         SupportedEncoding.gptq: [
             KVCacheStrategy.PAGED,
-            KVCacheStrategy.NAIVE,
         ],
         SupportedEncoding.q4_k: [KVCacheStrategy.NAIVE],
         SupportedEncoding.q4_0: [KVCacheStrategy.NAIVE],
@@ -62,8 +57,11 @@ llama_arch = SupportedArchitecture(
     pipeline_model=Llama3Model,
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,
-    default_weights_format=WeightsFormat.gguf,
-    weight_converters={WeightsFormat.safetensors: LlamaSafetensorAdapter},
+    default_weights_format=WeightsFormat.safetensors,
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
+    },
     task=PipelineTask.TEXT_GENERATION,
 )
 
@@ -94,7 +92,10 @@ exaone_arch = SupportedArchitecture(
     tokenizer=TextTokenizer,
     rope_type=RopeType.neox,
     default_weights_format=WeightsFormat.gguf,
-    weight_converters={WeightsFormat.safetensors: ExaoneSafetensorAdapter},
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_exaone_safetensor_state_dict,
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
+    },
 )
 
 
@@ -108,18 +109,21 @@ phi3_arch = SupportedArchitecture(
         SupportedEncoding.float32: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            KVCacheStrategy.NAIVE,
+            # KVCacheStrategy.NAIVE,  # TODO(kathywu): Support naive caching for phi models
         ],
         SupportedEncoding.bfloat16: [
             KVCacheStrategy.PAGED,
             KVCacheStrategy.CONTINUOUS,
-            KVCacheStrategy.NAIVE,
+            # KVCacheStrategy.NAIVE,  # TODO(kathywu): Support naive caching for phi models
         ],
     },
     pipeline_model=Phi3Model,
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,
-    weight_converters={WeightsFormat.safetensors: PhiSafetensorAdapter},
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
+    },
 )
 
 
@@ -144,5 +148,8 @@ olmoe_arch = SupportedArchitecture(
     pipeline_model=OlmoModel,
     tokenizer=TextTokenizer,
     rope_type=RopeType.normal,
-    weight_converters={WeightsFormat.safetensors: LlamaSafetensorAdapter},
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+        WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
+    },
 )

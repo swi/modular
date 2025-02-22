@@ -11,7 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .layer_norm import LayerNorm
+from .layer_norm import LayerNorm, LayerNormV2
 from .rms_norm import DistributedRMSNorm, RMSNorm, RMSNormV2
 
-__all__ = ["LayerNorm", "RMSNorm", "RMSNormV2", "DistributedRMSNorm"]
+__all__ = [
+    "LayerNorm",
+    "LayerNormV2",
+    "RMSNorm",
+    "RMSNormV2",
+    "DistributedRMSNorm",
+]

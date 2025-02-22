@@ -18,9 +18,8 @@ from max.graph import TensorValue, TensorValueLike, ops
 
 from ..attention import NaiveAttentionWithRope
 from ..embedding import Embedding, EmbeddingV2
-from ..layer import LayerList, LayerV2
-from ..linear import MLP, MLPV2, Linear, LinearV2
-from ..norm import RMSNorm, RMSNormV2
+from ..layer import Layer, LayerList, LayerV2
+from ..linear import Linear, LinearV2
 
 
 class NaiveTransformerBlock(LayerV2):
@@ -29,15 +28,15 @@ class NaiveTransformerBlock(LayerV2):
     def __init__(
         self,
         attention: NaiveAttentionWithRope,
-        mlp: MLP | MLPV2,
-        attention_norm: RMSNorm | RMSNormV2,
-        mlp_norm: RMSNorm | RMSNormV2,
+        mlp: Layer,
+        attention_norm: Layer,
+        mlp_norm: Layer,
     ):
         super().__init__()
-        self.attention = attention
+        self.self_attn = attention
         self.mlp = mlp
-        self.attention_norm = attention_norm
-        self.mlp_norm = mlp_norm
+        self.input_layernorm = attention_norm
+        self.post_attention_layernorm = mlp_norm
 
     def __call__(
         self,
@@ -48,8 +47,8 @@ class NaiveTransformerBlock(LayerV2):
         start_pos: TensorValue,
         layer_index: int,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
-        attention_out = self.attention(
-            self.attention_norm(x),
+        attention_out = self.self_attn(
+            self.input_layernorm(x),
             attention_mask,
             k_cache,  # type: ignore
             v_cache,  # type: ignore
@@ -58,7 +57,7 @@ class NaiveTransformerBlock(LayerV2):
         )
 
         h = x + attention_out
-        h = h + self.mlp(self.mlp_norm(h))
+        h = h + self.mlp(self.post_attention_layernorm(h))
 
         return h  # type: ignore
 
@@ -71,7 +70,7 @@ class NaiveTransformer(LayerV2):
         dim: int,
         n_heads: int,
         layers: list[NaiveTransformerBlock],
-        norm: RMSNorm | RMSNormV2,
+        norm: Layer,
         output: Linear | LinearV2,
         theta: float,
         embedding: Embedding | EmbeddingV2,
@@ -82,9 +81,9 @@ class NaiveTransformer(LayerV2):
         self.n_heads = n_heads
         self.layers = LayerList(layers)
         self.norm = norm
-        self.output = output
+        self.lm_head = output
         self.theta = theta
-        self.embedding = embedding
+        self.embed_tokens = embedding
         self.output_type = output_type
 
     def __call__(
@@ -95,10 +94,10 @@ class NaiveTransformer(LayerV2):
         v_cache: TensorValueLike,
         start_pos: TensorValueLike,
     ) -> tuple[TensorValue]:
-        h = self.embedding(tokens)
+        h = self.embed_tokens(tokens)
 
         for i in range(len(self.layers)):
-            h = self.layers[i](  # type: ignore
+            h = self.layers[i](
                 h,
                 attention_mask,
                 k_cache,
@@ -107,7 +106,7 @@ class NaiveTransformer(LayerV2):
                 i,
             )
 
-        output = self.output(self.norm(h))
+        output = self.lm_head(self.norm(h))
         if self.output_type is not None:
             casted_output = ops.cast(output, self.output_type)
             return (casted_output,)

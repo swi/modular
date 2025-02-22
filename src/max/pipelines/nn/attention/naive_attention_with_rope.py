@@ -40,10 +40,10 @@ class NaiveAttentionWithRope(LayerV2):
         self.n_heads = n_heads
         self.kv_params = kv_params
         self.dim = dim
-        self.wq = wq
-        self.wk = wk
-        self.wv = wv
-        self.wo = wo
+        self.q_proj = wq
+        self.k_proj = wk
+        self.v_proj = wv
+        self.o_proj = wo
         self.rope = rope
 
         if self.kv_params.cache_strategy.uses_opaque():
@@ -131,9 +131,9 @@ class NaiveAttentionWithRope(LayerV2):
         x = TensorValue(x)
         batch, seq_len = x.shape[0], x.shape[1]
         # matmul weights
-        xq = self.wq(x)
-        xk = self.wk(x)
-        xv = self.wv(x)
+        xq = self.q_proj(x)
+        xk = self.k_proj(x)
+        xv = self.v_proj(x)
 
         xq = ops.reshape(
             xq, [batch, seq_len, self.n_heads, self.kv_params.head_dim]
@@ -193,4 +193,4 @@ class NaiveAttentionWithRope(LayerV2):
             .transpose(1, 2)
             .reshape([batch, seq_len, -1])
         )
-        return self.wo(output)
+        return self.o_proj(output)

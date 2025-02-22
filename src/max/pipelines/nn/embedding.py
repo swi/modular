@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from typing import Optional
 
@@ -18,7 +20,7 @@ from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, TensorValueLike, Weight, ops
 from max.graph.quantization import QuantizationEncoding
 
-from .layer import Layer
+from .layer import Layer, LayerV2
 
 
 @dataclass
@@ -35,7 +37,7 @@ class Embedding(Layer):
         return result
 
 
-class EmbeddingV2(Layer):
+class EmbeddingV2(LayerV2):
     """
     A lookup table for embedding integer indices into dense vectors.
 
@@ -64,7 +66,7 @@ class EmbeddingV2(Layer):
     """The embedding weight matrix stored on the CPU.
     Model init moves weights to the device specified in :obj:`device`."""
 
-    device: DeviceRef
+    device: DeviceRef | None
     """The device on which embedding lookup is performed."""
 
     def __init__(
@@ -72,7 +74,7 @@ class EmbeddingV2(Layer):
         vocab_size: int,
         hidden_dim: int,
         dtype: DType,
-        device: DeviceRef,
+        device: DeviceRef | None = None,
         quantization_encoding: Optional[QuantizationEncoding] = None,
         name: Optional[str] = None,
     ) -> None:
@@ -95,7 +97,7 @@ class EmbeddingV2(Layer):
             name or "weight",
             dtype,
             shape=(vocab_size, hidden_dim),
-            device=DeviceRef.CPU(),
+            device=DeviceRef.CPU() if self.device else None,
             quantization_encoding=quantization_encoding,
         )
 
@@ -111,6 +113,12 @@ class EmbeddingV2(Layer):
             indices.
             The result resides on the device specified in :obj:`device`.
         """
-        return ops.gather(
-            TensorValue(self.weight).to(self.device), indices, axis=0
+        weight = self.weight.to(self.device) if self.device else self.weight
+        result = ops.gather(
+            TensorValue(weight),
+            indices,
+            axis=0,
         )
+        if self.weight.quantization_encoding is not None:
+            result = ops.dequantize(self.weight.quantization_encoding, result)
+        return result

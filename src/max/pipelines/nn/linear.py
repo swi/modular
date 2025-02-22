@@ -70,7 +70,7 @@ class LinearV2(LayerV2):
     """The optional bias vector stored on CPU with shape (out_dim,).
     Model init moves the bias to :obj:`device` if present."""
 
-    device: DeviceRef
+    device: DeviceRef | None
     """The device where matrix operations are performed."""
 
     def __init__(
@@ -78,7 +78,7 @@ class LinearV2(LayerV2):
         in_dim: int,
         out_dim: int,
         dtype: DType,
-        device: DeviceRef,
+        device: DeviceRef | None = None,
         has_bias: bool = False,
         quantization_encoding: Optional[QuantizationEncoding] = None,
         name: Optional[str] = None,
@@ -98,21 +98,22 @@ class LinearV2(LayerV2):
         """
         super().__init__()
 
+        self.device = device
+
         self.weight = Weight(
             name=f"{name}.weight" if name else "weight",
             dtype=dtype,
             shape=(out_dim, in_dim),
-            device=DeviceRef.CPU(),
+            device=DeviceRef.CPU() if self.device else None,
             quantization_encoding=quantization_encoding,
         )
-        self.device = device
 
         if has_bias:
             self.bias = Weight(
                 name=f"{name}.bias" if name else "bias",
                 dtype=dtype,
                 shape=(out_dim,),
-                device=DeviceRef.CPU(),
+                device=DeviceRef.CPU() if self.device else None,
                 quantization_encoding=quantization_encoding,
             )
 
@@ -131,7 +132,9 @@ class LinearV2(LayerV2):
         Raises:
             ValueError: If the last dimension of ``x`` doesn't match ``in_dim``.
         """
-        weight = self.weight.to(self.device)
+        weight: TensorValue = self.weight
+        if self.device:
+            weight = weight.to(self.device)
 
         if self.weight.quantization_encoding:
             res = ops.qmatmul(
@@ -143,7 +146,8 @@ class LinearV2(LayerV2):
         else:
             res = x @ weight.T
         if self.bias is not None:
-            res += self.bias.to(self.device)
+            bias = self.bias.to(self.device) if self.device else self.bias
+            res += bias
         return res
 
 
@@ -152,17 +156,6 @@ def _allocate_if_needed(value: Weights | Weight, dtype, shape) -> Weight:
         return value
     else:
         return value.weight.allocate(dtype, shape)
-
-
-def linear_class(
-    quantization_encoding: Optional[QuantizationEncoding],
-) -> type[LinearV2]:
-    """Returns a Linear class to use that's compatible with the quantization
-    encoding."""
-    if quantization_encoding and hasattr(quantization_encoding, "config"):
-        return GPTQLinearV2
-    else:
-        return LinearV2
 
 
 @dataclass
@@ -384,7 +377,7 @@ class GPTQLinearV2(LinearV2):
         in_dim: int,
         out_dim: int,
         dtype: DType,
-        device: DeviceRef,
+        device: DeviceRef | None = None,
         has_bias: bool = False,
         quantization_encoding: Optional[QuantizationEncoding] = None,
         quantization_config: Optional[QuantizationConfig] = None,
@@ -398,13 +391,31 @@ class GPTQLinearV2(LinearV2):
             dtype: The data type for both weights and bias.
             device: The target device for computation.
                 Weights remain on CPU until moved during computation.
-            name: Base name for weights (appended with ``.weight`` and
-                ``.bias`` if applicable).
             has_bias: When :obj:`True`, adds a bias vector to the layer.
                 Defaults to :obj:`False`.
+            quantization_encoding: The quantization encoding of the weights.
+            quantization_config: Extra config for the weight quantization.
         """
-        super().__init__(
-            in_dim, out_dim, dtype, device, has_bias, quantization_encoding
+        del out_dim, dtype  # Unused.
+        if has_bias:
+            raise ValueError("has_bias=True is not supported in GPTQLinear.")
+
+        # Skip LinearV2 initialization.
+        LayerV2.__init__(self)
+        self.device = device
+        self.qweight = Weight(
+            name="qweight",
+            dtype=DType.uint8,
+            shape=(1, 1),  # Shape will be overridden at load_state_dict.
+            device=DeviceRef.CPU() if device else None,
+            quantization_encoding=quantization_encoding,
+        )
+        self.scales = Weight(
+            name="scales",
+            dtype=DType.uint8,
+            shape=(1, 1),  # Shape will be overridden at load_state_dict.
+            device=DeviceRef.CPU() if device else None,
+            quantization_encoding=quantization_encoding,
         )
 
         assert quantization_config, (
@@ -415,27 +426,49 @@ class GPTQLinearV2(LinearV2):
         self.quantization_config = quantization_config
 
         desc_act = self.quantization_config.desc_act
-
         self.perm_idx = None
         if desc_act:
-            self.perm_idx = Weight("perm_idx", DType.int32, [out_dim])
+            self.perm_idx = Weight(
+                "perm_idx",
+                DType.int32,
+                [in_dim],
+                device=DeviceRef.CPU() if device else None,
+            )
 
     def __call__(self, x: TensorValue) -> TensorValue:
-        assert self.weight.quantization_encoding is not None
+        assert self.qweight.quantization_encoding is not None
+        qweight_dtype, qweight_shape = self.qweight.original_dtype_and_shape
+        qweight = ops.reshape(
+            self.qweight,
+            (qweight_shape[0] * qweight_dtype.size_in_bytes, qweight_shape[1]),
+        ).transpose(0, 1)
+
+        scales_dtype, scales_shape = self.scales.original_dtype_and_shape
+        scales = ops.reshape(
+            self.scales,
+            (scales_shape[0] * scales_dtype.size_in_bytes, scales_shape[1]),
+        ).transpose(0, 1)
+        weight = ops.concat((qweight, scales), axis=1).transpose(0, 1)
+        if self.device:
+            weight = weight.to(self.device)
         if self.perm_idx is not None:
+            perm_idx: TensorValue = self.perm_idx
+            if self.device:
+                perm_idx = perm_idx.to(self.device)
+
             res = ops.qmatmul(
-                self.weight.quantization_encoding,
+                self.qweight.quantization_encoding,
                 self.quantization_config,
-                ops.gather(x, self.perm_idx, axis=2),
-                self.weight,
+                ops.gather(x, self.perm_idx, axis=(x.rank - 1)),
+                weight,
                 self.perm_idx,
             )
         else:
             res = ops.qmatmul(
-                self.weight.quantization_encoding,
+                self.qweight.quantization_encoding,
                 None,
                 x,
-                self.weight,
+                weight,
             )
         if self.bias is not None:
             res += TensorValue(self.bias)
@@ -496,7 +529,7 @@ class MLPV2(LayerV2):
             and TensorValue(x).device != DeviceRef.CPU()
             and False  # GEX-1476: This causes elaboration errors - disable swish_glu pathway.
         ):
-            return self.down_proj[0](
+            return self.down_proj(
                 swish_glu(
                     x,
                     self.gate_proj.weight,
@@ -505,7 +538,7 @@ class MLPV2(LayerV2):
             )
 
         return self.down_proj(
-            ops.silu(self.gate_proj[0](x)) * self.up_proj[0](x)  # type: ignore
+            ops.silu(self.gate_proj(x)) * self.up_proj(x)  # type: ignore
         )
 
 

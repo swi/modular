@@ -47,7 +47,7 @@ from max.graph.weights import (
     GGUFWeights,
     SafetensorWeights,
     Weights,
-    WeightsConverter,
+    WeightsAdapter,
 )
 from max.pipelines.kv_cache import KVCacheStrategy
 from tqdm.contrib.concurrent import thread_map
@@ -620,8 +620,10 @@ class PipelineConfig:
     _devices: list[Device] = field(default_factory=list)
     """The underlying initialized devices, created by the specific `device_specs`."""
 
-    _weights_converter: Optional[type[WeightsConverter]] = None
-    """Weight converter for the provided `weight_path`."""
+    _weight_adapters: dict[WeightsFormat, WeightsAdapter] = field(
+        default_factory=dict
+    )
+    """Weight adapter for the provided `weight_path`."""
 
     _weights_repo_id: Optional[str] = None
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
@@ -962,11 +964,6 @@ class PipelineConfig:
 
     def load_weights(self) -> Weights:
         self.download_weights()
-
-        if self._weights_converter:
-            return self._weights_converter.load_weights(
-                self.weight_path, config=self
-            )
 
         if self.weights_format == WeightsFormat.gguf:
             if len(self.weight_path) > 1:

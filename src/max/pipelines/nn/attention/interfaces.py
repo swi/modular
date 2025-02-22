@@ -17,14 +17,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-from max.dtype import DType
 from max.graph import (
     BufferValue,
-    DeviceRef,
     TensorValue,
     TensorValueLike,
-    Weight,
-    ops,
 )
 from max.pipelines.kv_cache import (
     ContinuousBatchingKVCacheCollection,
@@ -33,7 +29,7 @@ from max.pipelines.kv_cache import (
 )
 
 from ..layer import Layer, LayerV2
-from ..linear import Linear, LinearV2
+from ..linear import Linear
 
 
 @dataclass
@@ -164,61 +160,6 @@ class AttentionImplV2(LayerV2, ABC):
                     attn_mask = kwargs["attn_mask"]
                 )
     """
-
-    def __init__(
-        self,
-        num_attention_heads: int,
-        num_key_value_heads: int,
-        hidden_size: int,
-        kv_params: KVCacheParams,
-        layer_idx: int,
-        dtype: DType = DType.float32,
-        device: DeviceRef = DeviceRef.CPU(),
-        linear_cls: type[LinearV2] = LinearV2,
-    ):
-        """Initializes the attention layer.
-
-        Args:
-            num_attention_heads: The number of attention heads.
-            num_key_value_heads: Number of key/value heads.
-            hidden_size: The dimension of the hidden states.
-            kv_params: KV Cache Params, including the number of kv heads, the head dim, and data type.
-            layer_idx: The layer number associated with this Attention block.
-            dtype: DType of the
-            device: Device to place the weights and run the computation.
-            linear_cls: Linear class to use for the outputs dense layer.
-        """
-        self.n_heads = num_attention_heads
-        self.layer_idx = layer_idx
-        self.kv_params = kv_params
-
-        if not self.kv_params.cache_strategy.uses_opaque():
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
-
-        kv_weight_dim = (
-            hidden_size // num_attention_heads
-        ) * num_key_value_heads
-
-        self.wq = Weight(
-            name="wq", dtype=dtype, shape=[hidden_size, hidden_size]
-        )
-        self.wk = Weight(
-            name="wk", dtype=dtype, shape=[kv_weight_dim, hidden_size]
-        )
-        self.wv = Weight(
-            name="wv", dtype=dtype, shape=[kv_weight_dim, hidden_size]
-        )
-        self.wo = linear_cls(
-            in_dim=hidden_size, out_dim=hidden_size, dtype=dtype, device=device
-        )
-
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        return ops.concat((self.wq, self.wk, self.wv))
 
     @abstractmethod
     def __call__(
