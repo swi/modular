@@ -37,6 +37,7 @@ from huggingface_hub import (
     model_info,
     repo_exists,
 )
+from huggingface_hub import constants as hf_hub_constants
 from huggingface_hub.hf_api import ModelInfo
 from huggingface_hub.utils import tqdm as hf_tqdm
 from max.driver import CPU, Accelerator, Device, DeviceSpec, accelerator_count
@@ -509,6 +510,9 @@ class PipelineConfig:
     huggingface_repo_id: str = ""
     """DEPRECATED: repo_id of a Hugging Face model repository to use. Use `model_path` instead."""
 
+    huggingface_revision: str = hf_hub_constants.DEFAULT_REVISION
+    """Branch or Git revision of Hugging Face model repository to use."""
+
     engine: Optional[PipelineEngine] = None
     """Engine backend to use for serving, 'max' for the max engine, or 'huggingface' as fallback option for improved model coverage."""
 
@@ -599,7 +603,7 @@ class PipelineConfig:
     """Whether or not to allow for custom modelling files on Hugging Face."""
 
     force_download: bool = False
-    """Whether to force download a given file if it's not already present in the local cache."""
+    """Whether to force download a given file if it's already present in the local cache."""
 
     enable_echo: bool = False
     """Whether the model should be built with echo capabilities."""
@@ -942,6 +946,7 @@ class PipelineConfig:
                     hf_hub_download(
                         weights_repo_id,
                         str(filename),
+                        revision=self.huggingface_revision,
                         force_download=self.force_download,
                     )
                 ),
@@ -982,6 +987,7 @@ class PipelineConfig:
         return {
             "model_path": "Specify the repository ID of a Hugging Face model repository to use. This is used to load both Tokenizers, architectures and model weights.",
             "huggingface_repo_id": "DEPRECATED: Use `model_path` instead.",
+            "huggingface_revision": "Branch or Git revision of Hugging Face model repository to use.",
             "engine": "Specify the engine backend to use for serving the model. Options include `max` for the MAX engine, or `huggingface` as a fallback option that provides improved model coverage.",
             "architecture": "Deprecated - Please set `model-path` instead. Define the model architecture to run. This should match one of the supported architectures for your selected engine.",
             "weight_path": "Provide an optional local path or path relative to the root of a Hugging Face repo to the model weights you want to use. This allows you to specify custom weights instead of using defaults. You may pass multiple, ie. `--weight-path=model-00001-of-00002.safetensors --weight-path=model-00002-of-00002.safetensors`",

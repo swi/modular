@@ -145,17 +145,20 @@ class TextTokenizer(PipelineTokenizer[TextContext, np.ndarray]):
     def __init__(
         self,
         model_path: str,
+        *,
+        revision: str | None = None,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
         enable_llama_whitespace_fix: bool = False,
-    ):
+    ) -> None:
         self.model_path = model_path
         self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
         self.delegate = AutoTokenizer.from_pretrained(
             model_path,
+            revision=revision,
             trust_remote_code=trust_remote_code,
             # If `max_length` is None, the max length will be taken
             # from the HuggingFace tokenizer_config.
@@ -322,16 +325,19 @@ class TextAndVisionTokenizer(
     def __init__(
         self,
         model_path: str,
+        *,
+        revision: str | None = None,
         max_length: int | None = None,
         max_new_tokens: int | None = None,
         trust_remote_code: bool = False,
-    ):
+    ) -> None:
         self.model_path = model_path
         self.max_length = max_length
         self.max_new_tokens = max_new_tokens
 
         self.delegate = AutoTokenizer.from_pretrained(
             model_path,
+            revision=revision,
             trust_remote_code=trust_remote_code,
             # If `max_length` is None, the max length will be taken
             # from the HuggingFace tokenizer_config.
@@ -339,6 +345,7 @@ class TextAndVisionTokenizer(
         )
         self.processor = AutoProcessor.from_pretrained(
             model_path,
+            revision=revision,
             trust_remote_code=trust_remote_code,
         )
 

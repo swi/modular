@@ -899,6 +899,7 @@ class PipelineRegistry:
             architecture:           {pipeline_config.architecture}
             devices:                {devices_str}
             model_path:             {pipeline_config.model_path}{weights_repo_str}
+            huggingface_revision:   {pipeline_config.huggingface_revision}
             quantization_encoding:  {pipeline_config.quantization_encoding}
             cache_strategy:         {pipeline_config.cache_strategy}
             weight_path:            [
@@ -967,17 +968,19 @@ class PipelineRegistry:
                 text_tokenizer = cast(Type[TextTokenizer], arch.tokenizer)
                 tokenizer = text_tokenizer(
                     pipeline_config.model_path,
-                    max_length,
-                    pipeline_config.max_new_tokens,
-                    pipeline_config.trust_remote_code,
+                    revision=pipeline_config.huggingface_revision,
+                    max_length=max_length,
+                    max_new_tokens=pipeline_config.max_new_tokens,
+                    trust_remote_code=pipeline_config.trust_remote_code,
                     enable_llama_whitespace_fix=True,
                 )
             else:
                 tokenizer = arch.tokenizer(
                     pipeline_config.model_path,
-                    max_length,
-                    pipeline_config.max_new_tokens,
-                    pipeline_config.trust_remote_code,
+                    revision=pipeline_config.huggingface_revision,
+                    max_length=max_length,
+                    max_new_tokens=pipeline_config.max_new_tokens,
+                    trust_remote_code=pipeline_config.trust_remote_code,
                 )
 
             pipeline_factory = functools.partial(
@@ -998,9 +1001,10 @@ class PipelineRegistry:
             # Generalized pipeline
             tokenizer = TextTokenizer(
                 pipeline_config.model_path,
-                pipeline_config.max_length,
-                pipeline_config.max_new_tokens,
-                pipeline_config.trust_remote_code,
+                revision=pipeline_config.huggingface_revision,
+                max_length=pipeline_config.max_length,
+                max_new_tokens=pipeline_config.max_new_tokens,
+                trust_remote_code=pipeline_config.trust_remote_code,
                 enable_llama_whitespace_fix=True,
             )
             logger.info(
