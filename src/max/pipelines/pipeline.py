@@ -424,7 +424,7 @@ class TextGenerationPipeline(TokenGenerator[T]):
         )
         # this is effectively: max_seq_len - (num_tokens_in_kv_cache + num_new_tokens) - num_new_tokens
         num_available_steps = max_seq_len - (
-            context.current_length - context.seq_len
+            context.current_length - context.active_length
         )
         if num_available_steps <= 0:
             raise ValueError(
@@ -492,9 +492,8 @@ class TextGenerationPipeline(TokenGenerator[T]):
 
             # Gather tokens and untrimmed lengths.
             seq_ids_and_prompts[context.cache_seq_id] = context.next_tokens
-
-            seq_ids_and_untrimmed_lengths[context.cache_seq_id] = len(
-                context.next_tokens
+            seq_ids_and_untrimmed_lengths[context.cache_seq_id] = (
+                context.active_length
             )
 
             # Update num_steps.
@@ -522,7 +521,11 @@ class TextGenerationPipeline(TokenGenerator[T]):
                 context.cache_seq_id
             ]
             trimmed_length = len(seq_ids_and_prompts[context.cache_seq_id])
-            context.trim_prompt(untrimmed_length - trimmed_length)
+            bump_length = untrimmed_length - trimmed_length
+            if bump_length > 0:
+                context.bump_token_indices(
+                    start_idx=bump_length,
+                )
 
         return (
             self._pipeline_model.prepare_initial_token_inputs(batch),

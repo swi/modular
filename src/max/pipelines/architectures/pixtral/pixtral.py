@@ -139,7 +139,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext]):
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_row_offsets = Tensor.from_numpy(
             np.cumsum(
-                [0] + [ctx.seq_len for ctx in context_batch],
+                [0] + [ctx.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
         ).to(self.pipeline_config.devices[0])

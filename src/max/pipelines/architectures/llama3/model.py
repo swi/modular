@@ -189,7 +189,7 @@ class LlamaModelBase(PipelineModel[TextContext]):
         # Get input_row_offsets: start and end position of each batch in the
         # combined total_seq_len dimension.
         input_row_offsets = np.cumsum(
-            [0] + [ctx.seq_len for ctx in context_batch],
+            [0] + [ctx.active_length for ctx in context_batch],
             dtype=np.uint32,
         )
 

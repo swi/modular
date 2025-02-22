@@ -899,7 +899,7 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # Input row offset type: ["input_row_offsets_len"], UInt32
         input_id_row_offsets = Tensor.from_numpy(
             np.cumsum(
-                [0] + [ctx.seq_len for ctx in context_batch],
+                [0] + [ctx.active_length for ctx in context_batch],
                 dtype=np.uint32,
             )
         ).to(self.pipeline_config.devices[0])
@@ -928,7 +928,8 @@ class LlamaVision(PipelineModel[TextAndVisionContext]):
         # device kernel side. No need for explicit .to(pipeline_config.device) call here.
         input_id_max_seq_len = Tensor.from_numpy(
             np.array(
-                [max(ctx.seq_len for ctx in context_batch)], dtype=np.uint32
+                [max(ctx.active_length for ctx in context_batch)],
+                dtype=np.uint32,
             )
         )
 
