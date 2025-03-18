@@ -1,113 +1,72 @@
-<div align="center">
-    <img src="https://modular-assets.s3.amazonaws.com/images/mojo_github_logo_bg.png">
+![Modular Logo](https://modular-assets.s3.amazonaws.com/images/modular_github_logo_bg.png)
 
-  [Website][Mojo] | [Getting Started] | [API Documentation] | [Contributing] | [Changelog]
-</div>
+# Welcome to MAX
 
-[Mojo]: https://www.modular.com/mojo/
-[Getting Started]: https://docs.modular.com/mojo/manual/get-started/
-[API Documentation]: https://docs.modular.com/mojo/lib
-[Contributing]: ./CONTRIBUTING.md
-[Changelog]: ./docs/changelog.md
+> Note: Mojo is included as a subdirectory in this repository
 
-# Welcome to Mojo 🔥
+The Modular Accelerated Xecution ([MAX](https://www.modular.com/max)) platform
+is an integrated suite of AI libraries, tools, and technologies that unifies
+commonly fragmented AI deployment workflows. MAX accelerates time to market
+for the latest innovations by giving AI developers a single toolchain that
+unlocks full programmability, unparalleled performance, and seamless hardware portability.
 
-Mojo is a new programming language that bridges the gap between research
-and production by combining Python syntax and ecosystem with systems
-programming and metaprogramming features. Mojo is still young, but it is
-designed to write blazing-fast code for CPUs, GPUs, and more as part of
-the [MAX Platform](https://www.modular.com/max).
+![](https://docs.modular.com/images/github/max-stack.png)
 
-This repo includes source code for:
+[See here to get started with MAX](https://docs.modular.com/max/get-started)
+and when you want to report issues or request features,
+[please create a GitHub issue here](https://github.com/modular/max/issues/new/choose).
 
-- Mojo examples
-- Mojo documentation hosted at [modular.com](https://docs.modular.com/mojo/)
-- The [Mojo standard library](https://docs.modular.com/mojo/lib)
+The [Discord](https://discord.gg/modular) community and
+[our forum](https://forum.modular.com/) is the best place to share
+your experiences and chat with the team and other community members.
 
-This repo has two primary branches:
+In the [examples directory](https://github.com/modular/max/tree/main/examples),
+you will find code examples and Jupyter notebooks that show how to run inference
+with MAX.
 
-- The [`stable`](https://github.com/modular/mojo/tree/stable) branch, which
-is in sync with the last stable released version of Mojo. Use the examples
-here if you’re using a [release build of Mojo](#latest-released).
+## Getting Started
 
-- The [`main`](https://github.com/modular/mojo/tree/main) branch, which
-is in sync with the Mojo nightly build and subject to breakage. Use this branch
-for [contributions](./CONTRIBUTING.md), or if you're using the latest
-[nightly build of Mojo](#latest-nightly).
+MAX is available in both stable and nightly builds. To install either version,
+follow the guide to [create a project with
+Magic](https://docs.modular.com/max/create-project).
 
-To learn more about Mojo, see the
-[Mojo Manual](https://docs.modular.com/mojo/manual/).
-
-## Installing Mojo
-
-### Latest Released
-
-To install the last released build of Mojo, follow the guide to
-[Get started with Mojo](https://docs.modular.com/mojo/manual/get-started).
-
-### Latest Nightly
-
-The nightly Mojo builds are subject to breakage and provide an inside
-view of how the development of Mojo is progressing.  Use at your own risk
-and be patient!
-
-To get nightly builds, see the same instructions to [Get started with
-Mojo](https://docs.modular.com/mojo/manual/get-started), but when you create
-your project, instead use the following `magic init` command to set the
-conda package channel to `max-nightly`:
+Then clone this repository:
 
 ```bash
-magic init hello-world-nightly --format mojoproject \
-  -c conda-forge -c https://conda.modular.com/max-nightly
+git clone https://github.com/modular/max.git
 ```
 
-Or, if you're [using conda](https://docs.modular.com/magic/conda), add the
-`https://conda.modular.com/max-nightly/` channel to your `environment.yaml`
-file. For example:
-
-```yaml
-[project]
-name = "Mojo nightly example"
-channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
-platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
-
-[dependencies]
-max = "*"
-```
-
-When you clone this repo, you'll be on the `main` branch by default,
-which includes code matching the latest nightly build:
+If you installed the stable build (v24.6), be sure you switch to the `stable` branch,
+because the `main` branch is for nightly releases and might not be compatible
+with stable builds:
 
 ```bash
-git clone https://github.com/modular/mojo.git
+git checkout stable
 ```
-
-If you want to instead see the source from the most recent stable
-release, then you can switch to the `stable` branch.
 
 ## Contributing
 
-When you want to report issues or request features, [please create a GitHub
-issue here](https://github.com/modular/mojo/issues).
-See [here](./CONTRIBUTING.md) for guidelines on filing good bugs.
+Thanks for your interest in contributing to this repository!
 
-We welcome contributions to this repo on the
-[`main`](https://github.com/modular/mojo/tree/main)
-branch. If you’d like to contribute to Mojo, please first read our [Contributor
-Guide](https://github.com/modular/mojo/blob/main/CONTRIBUTING.md).
+We accept contributions on the [main](https://github.com/modular/max/tree/main)
+branch. Please switch there for instructions.
 
-For more general questions or to chat with other Mojo developers, check out our
-[Discord](https://discord.gg/modular).
+We also welcome your bug reports.  If you have a bug, please file an issue
+[here](https://github.com/modular/max/issues/new/choose).
+
+If you need support, the [Discord](https://discord.gg/modular)
+community and [our forum](https://forum.modular.com/) is the best
+place to share your experiences and chat with the team and other
+community members.
 
 ## License
 
-This repository and its contributions are licensed under the Apache License v2.0
-with LLVM Exceptions (see the LLVM [License](https://llvm.org/LICENSE.txt)).
+This repository and its contributions are licensed under the Apache License
+v2.0 with LLVM Exceptions (see the LLVM [License](https://llvm.org/LICENSE.txt)).
 MAX and Mojo usage and distribution are licensed under the
 [MAX & Mojo Community License](https://www.modular.com/legal/max-mojo-license).
 
-## Thanks to our contributors
+### Third Party Licenses
 
-<a href="https://github.com/modular/mojo/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=modular/mojo" />
-</a>
+You are entirely responsible for checking and validating the licenses of
+third parties (i.e. Huggingface) for related software and libraries that are downloaded.
