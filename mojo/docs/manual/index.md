@@ -64,8 +64,6 @@ feedback](https://www.modular.com/community).
 
 - **GPU programming**
 
-  - [Get started with GPU programming with Mojo and the MAX
-    Driver](/mojo/manual/gpu/intro-tutorial)
   - [GPU basics](/mojo/manual/gpu/basics)
 
 - **Python**

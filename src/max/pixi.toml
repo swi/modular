@@ -1,6 +1,6 @@
 [project]
 name = "max-pipelines-example"
-channels = ["conda-forge", "https://conda.modular.com/max/"]
+channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 description = "MAX Pipelines"
 version = "0.5.0"
