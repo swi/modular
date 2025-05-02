@@ -99,6 +99,42 @@ def test_file_read_context():
         )
 
 
+def test_file_read_to_address():
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer = InlineArray[UInt8, size=1000](fill=0)
+        assert_equal(f.read(buffer), 954)
+        assert_equal(buffer[0], 76)  # L
+        assert_equal(buffer[1], 111)  # o
+        assert_equal(buffer[2], 114)  # r
+        assert_equal(buffer[3], 101)  # e
+        assert_equal(buffer[4], 109)  # m
+        assert_equal(buffer[5], 32)  # <space>
+        assert_equal(buffer[56], 10)  # <LF>
+
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer = InlineArray[UInt8, size=1000](fill=0)
+        assert_equal(f.read(buffer), 954)
+
+    with open(
+        _dir_of_current_file() / "test_file_dummy_input.txt",
+        "r",
+    ) as f:
+        var buffer_30 = InlineArray[UInt8, size=30](fill=0)
+        var buffer_1 = InlineArray[UInt8, size=1](fill=0)
+        var buffer_2 = InlineArray[UInt8, size=2](fill=0)
+        var buffer_100 = InlineArray[UInt8, size=100](fill=0)
+        assert_equal(f.read(buffer_30), 30)
+        assert_equal(f.read(buffer_1), 1)
+        assert_equal(f.read(buffer_2), 2)
+        assert_equal(f.read(buffer_100), 100)
+
+
 def test_file_seek():
     import os
 
