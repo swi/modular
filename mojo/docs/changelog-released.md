@@ -70,7 +70,7 @@ release](/max/packages#nightly-release).
   renaming it to start with an underscore, e.g. `_x`.
 
 - Mojo can now use [user-declared `__merge_with__` dunder
-  methods](https://github.com/modular/max/blob/main/mojo/proposals/custom-type-merging.md)
+  methods](https://github.com/modular/modular/blob/main/mojo/proposals/custom-type-merging.md)
   to merge values if different types in ternary operations.  This has been
   adopted to allow pointers to work naturally with the ternary operator, for
   example `var x = one_pointer if cond else other_pointer`.
@@ -244,7 +244,7 @@ At /tmp/test.mojo:5:17: block: [1,0,0] thread: [1,0,0] Assert Error: x should be
 
 - Removed deprecated `DeviceContext` methods `copy_sync` and `memset_sync`.
 
-- Add `Variant.is_type_supported` method. ([PR #4057](https://github.com/modular/max/pull/4057))
+- Add `Variant.is_type_supported` method. ([PR #4057](https://github.com/modular/modular/pull/4057))
   Example:
 
   ```mojo
@@ -324,37 +324,37 @@ code to LLVM IR, save the IR to a .ll file (using the same name as the input
 
 ### 🛠️ Fixed
 
-- [#3510](https://github.com/modular/max/issues/3510) - `PythonObject` doesn't
+- [#3510](https://github.com/modular/modular/issues/3510) - `PythonObject` doesn't
   handle large `UInt64` correctly.
 
-- [#3847](https://github.com/modular/max/issues/3847) - Count leading zeros
+- [#3847](https://github.com/modular/modular/issues/3847) - Count leading zeros
   can't be used on SIMD at compile time.
 
-- [#4198](https://github.com/modular/max/issues/4198) - Apple M4
+- [#4198](https://github.com/modular/modular/issues/4198) - Apple M4
   is not properly detected with `sys.is_apple_silicon()`.
 
-- [#3662](https://github.com/modular/max/issues/3662) - Code using `llvm.assume`
+- [#3662](https://github.com/modular/modular/issues/3662) - Code using `llvm.assume`
   cannot run at compile time.
 
-- [#4273](https://github.com/modular/max/issues/4273) - `count_leading_zeros`
+- [#4273](https://github.com/modular/modular/issues/4273) - `count_leading_zeros`
   doesn't work for vectors with size > 1 at comptime.
 
-- [#4320](https://github.com/modular/max/issues/4320) - Intermittent
+- [#4320](https://github.com/modular/modular/issues/4320) - Intermittent
   miscompilation with bytecode imported traits.
 
-- [#4281](https://github.com/modular/max/issues/4281) - MAX does not support RTX
-  5000-series GPUs.
+- [#4281](https://github.com/modular/modular/issues/4281) - MAX does not support
+  RTX 5000-series GPUs.
 
-- [#4163](https://github.com/modular/max/issues/4163) - Corner case in
+- [#4163](https://github.com/modular/modular/issues/4163) - Corner case in
   initializers.
 
-- [#4360](https://github.com/modular/max/issues/4360) - Fix constructor emission
+- [#4360](https://github.com/modular/modular/issues/4360) - Fix constructor emission
   for parameterized types conforming to a trait composition.
 
-- [#4362](https://github.com/modular/max/issues/4362) - Function call with
+- [#4362](https://github.com/modular/modular/issues/4362) - Function call with
   `IntLiteral` incorrectly eliminated despite side-effects.
 
-- [#4431](https://github.com/modular/max/issues/4431) - [BUG] Python.evaluate
+- [#4431](https://github.com/modular/modular/issues/4431) - [BUG] Python.evaluate
   doesn't handle nul termination correctly.
 
 ## v25.2 (2025-03-25)
