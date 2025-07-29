@@ -1,6 +1,6 @@
 [project]
 authors = ["Modular <hello@modular.com>"]
-channels = ["conda-forge", "https://conda.modular.com/max-nightly/"]
+channels = ["conda-forge", "https://conda.modular.com/max/"]
 description = "Examples of PyTorch custom ops in Mojo"
 name = "PyTorch Custom Operations"
 platforms = ["linux-aarch64", "linux-64"]
