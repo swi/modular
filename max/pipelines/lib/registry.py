@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
 from typing import TYPE_CHECKING, Callable, Optional, Union, cast
 
 from max.driver import Device, load_devices
@@ -264,11 +265,14 @@ class PipelineRegistry:
         # way we instantiate multiprocess model workers, pickling AutoConfig will
         # not work and AutoConfig.from_pretrained will need to be called again
         # when trust_remote_code=True.
+        offline_mode = os.environ.get("HF_HUB_OFFLINE") == "1"
+        local_files_only = offline_mode
         if huggingface_repo.trust_remote_code:
             return AutoConfig.from_pretrained(
                 huggingface_repo.repo_id,
                 trust_remote_code=huggingface_repo.trust_remote_code,
                 revision=huggingface_repo.revision,
+                local_files_only=local_files_only,
             )
 
         if huggingface_repo not in self._cached_huggingface_configs:
@@ -277,6 +281,7 @@ class PipelineRegistry:
                     huggingface_repo.repo_id,
                     trust_remote_code=huggingface_repo.trust_remote_code,
                     revision=huggingface_repo.revision,
+                    local_files_only=local_files_only,
                 )
             )
 
