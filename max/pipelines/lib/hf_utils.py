@@ -108,6 +108,25 @@ def try_to_load_from_cache(
     )
 
 
+def try_to_load_from_cache_only(
+    repo_id: str, filename: str, revision: str
+) -> Union[str, Any, None]:
+    """
+    Attempt to load a file from the cache without making any network calls.
+    This is a wrapper around huggingface_hub.try_to_load_from_cache that
+    sets local_files_only=True.
+    """
+    try:
+        return huggingface_hub.try_to_load_from_cache(
+            repo_id=repo_id,
+            filename=filename,
+            revision=revision,
+            local_files_only=True,
+        )
+    except FileNotFoundError:
+        return None
+
+
 def validate_hf_repo_access(repo_id: str, revision: str) -> None:
     """
     Validate repository access and raise clear, user-friendly errors.
@@ -119,6 +138,17 @@ def validate_hf_repo_access(repo_id: str, revision: str) -> None:
     Raises:
         ValueError: With user-friendly error messages for various access issues
     """
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        # Skip network validation in offline mode
+        cached_path = try_to_load_from_cache_only(
+            repo_id, "config.json", revision
+        )
+        if not cached_path:
+            raise ValueError(
+                f"Model '{repo_id}' not found in cache and offline mode is enabled"
+            )
+        return
+
     try:
         repo_exists = _repo_exists_with_retry(
             repo_id=repo_id, revision=revision
